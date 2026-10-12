@@ -1,0 +1,32 @@
+{
+  "_설명": "증권사 리포트 헤드라인을 직접 등록하는 파일입니다. 각 증권사 리서치센터 공개 페이지에서 제목·날짜·의견·목표가를 확인하고, url에 원문 주소를 넣으세요. 네이버·한경 같은 모음 사이트를 자동 수집하지 마세요(법적 위험). example: true 인 항목은 화면에 '예시'로 표시됩니다. 실제 리포트를 넣으면 example 줄을 지우세요.",
+  "_형식": {"date": "2026-10-10", "broker": "증권사", "title": "제목", "rating": "매수 또는 중립 또는 매도", "tp": 100000, "prev_tp": 95000, "url": "https://원문주소"},
+  "reports": {
+    "005930": [
+      {"date": "2026-10-10", "broker": "미래에셋증권", "title": "HBM3E 공급 확대, 메모리 업사이클 본격화", "rating": "매수", "tp": 112000, "prev_tp": 105000, "url": "", "example": true},
+      {"date": "2026-10-08", "broker": "한국투자증권", "title": "3분기 잠정실적 리뷰: 기대 부합", "rating": "매수", "tp": 105000, "prev_tp": 105000, "url": "", "example": true},
+      {"date": "2026-10-07", "broker": "KB증권", "title": "AI 서버향 수요가 이끄는 실적 개선", "rating": "매수", "tp": 110000, "prev_tp": 100000, "url": "", "example": true},
+      {"date": "2026-10-02", "broker": "NH투자증권", "title": "레거시 메모리 회복은 아직", "rating": "중립", "tp": 92000, "prev_tp": 95000, "url": "", "example": true}
+    ],
+    "000660": [
+      {"date": "2026-10-09", "broker": "삼성증권", "title": "HBM 리더십 유지, 이익 체력 레벨업", "rating": "매수", "tp": 290000, "prev_tp": 270000, "url": "", "example": true},
+      {"date": "2026-10-07", "broker": "미래에셋증권", "title": "피크아웃 우려는 과도", "rating": "매수", "tp": 280000, "prev_tp": 280000, "url": "", "example": true},
+      {"date": "2026-10-03", "broker": "하나증권", "title": "공급 증가 속도 점검 필요", "rating": "중립", "tp": 230000, "prev_tp": 250000, "url": "", "example": true}
+    ],
+    "005380": [
+      {"date": "2026-10-08", "broker": "KB증권", "title": "관세 부담 속 하이브리드가 버팀목", "rating": "매수", "tp": 310000, "prev_tp": 320000, "url": "", "example": true},
+      {"date": "2026-10-06", "broker": "NH투자증권", "title": "주주환원 정책이 하방 지지", "rating": "매수", "tp": 300000, "prev_tp": 300000, "url": "", "example": true},
+      {"date": "2026-10-01", "broker": "하나증권", "title": "관세 비용, 4분기에 본격 반영", "rating": "매수", "tp": 295000, "prev_tp": 315000, "url": "", "example": true}
+    ],
+    "035420": [
+      {"date": "2026-10-09", "broker": "한국투자증권", "title": "커머스 수수료 개편 효과 본격화", "rating": "매수", "tp": 260000, "prev_tp": 250000, "url": "", "example": true},
+      {"date": "2026-10-06", "broker": "미래에셋증권", "title": "AI 검색이 체류시간을 늘린다", "rating": "매수", "tp": 255000, "prev_tp": 240000, "url": "", "example": true},
+      {"date": "2026-10-04", "broker": "삼성증권", "title": "AI 투자 비용이 단기 부담", "rating": "중립", "tp": 210000, "prev_tp": 220000, "url": "", "example": true}
+    ],
+    "373220": [
+      {"date": "2026-10-10", "broker": "신한투자증권", "title": "ESS가 전기차 공백을 메운다", "rating": "매수", "tp": 520000, "prev_tp": 500000, "url": "", "example": true},
+      {"date": "2026-10-07", "broker": "NH투자증권", "title": "전기차 수요 둔화는 진행형", "rating": "매수", "tp": 430000, "prev_tp": 480000, "url": "", "example": true},
+      {"date": "2026-10-05", "broker": "KB증권", "title": "밸류에이션이 이익을 앞서간다", "rating": "중립", "tp": 330000, "prev_tp": 350000, "url": "", "example": true}
+    ]
+  }
+}

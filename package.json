@@ -1,0 +1,6 @@
+{
+  "name": "korea-discount-lab",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" }
+}

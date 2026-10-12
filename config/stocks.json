@@ -1,0 +1,42 @@
+{
+  "_설명": "사이트에 보여줄 종목 목록입니다. 종목을 추가하려면 아래 형식대로 한 덩어리를 복사해서 고치세요. peers(해외 비교 기업) 수치는 각 회사 IR 자료나 SEC EDGAR·EDINET 공시를 보고 직접 입력합니다. kr_div(한국 종목 배당수익률, %)도 직접 입력합니다.",
+  "peers_as_of": "예시 값 — 직접 확인 후 날짜를 적어 주세요",
+  "stocks": [
+    {
+      "code": "035420", "name": "NAVER", "alias": ["네이버", "naver"], "mkt": "KOSPI", "sector": "인터넷 플랫폼", "kr_div": 0.6,
+      "peers": [
+        {"country": "US", "name": "Alphabet", "ticker": "GOOGL", "per": 21.4, "pbr": 6.8, "roe": 31.0, "div": 0.5},
+        {"country": "JP", "name": "LY Corp", "ticker": "4689", "per": 18.9, "pbr": 1.0, "roe": 5.4, "div": 1.6}
+      ]
+    },
+    {
+      "code": "005930", "name": "삼성전자", "alias": ["삼전", "samsung"], "mkt": "KOSPI", "sector": "메모리 반도체", "kr_div": 1.7,
+      "peers": [
+        {"country": "US", "name": "Micron", "ticker": "MU", "per": 11.8, "pbr": 2.6, "roe": 22.0, "div": 0.4},
+        {"country": "JP", "name": "Kioxia", "ticker": "285A", "per": 13.5, "pbr": 3.1, "roe": 25.0, "div": 0.0}
+      ]
+    },
+    {
+      "code": "000660", "name": "SK하이닉스", "alias": ["하이닉스", "hynix"], "mkt": "KOSPI", "sector": "메모리 반도체", "kr_div": 0.6,
+      "peers": [
+        {"country": "US", "name": "Micron", "ticker": "MU", "per": 11.8, "pbr": 2.6, "roe": 22.0, "div": 0.4},
+        {"country": "JP", "name": "Kioxia", "ticker": "285A", "per": 13.5, "pbr": 3.1, "roe": 25.0, "div": 0.0}
+      ]
+    },
+    {
+      "code": "005380", "name": "현대차", "alias": ["현대자동차", "hyundai"], "mkt": "KOSPI", "sector": "완성차", "kr_div": 5.2,
+      "peers": [
+        {"country": "JP", "name": "Toyota", "ticker": "7203", "per": 9.1, "pbr": 1.1, "roe": 12.5, "div": 3.0},
+        {"country": "JP", "name": "Honda", "ticker": "7267", "per": 7.4, "pbr": 0.6, "roe": 7.5, "div": 4.2},
+        {"country": "US", "name": "GM", "ticker": "GM", "per": 5.6, "pbr": 0.8, "roe": 14.0, "div": 1.0}
+      ]
+    },
+    {
+      "code": "373220", "name": "LG에너지솔루션", "alias": ["엘지엔솔", "lg엔솔", "lges"], "mkt": "KOSPI", "sector": "2차전지", "kr_div": 0.0,
+      "peers": [
+        {"country": "JP", "name": "Panasonic", "ticker": "6752", "per": 14.2, "pbr": 0.9, "roe": 6.0, "div": 2.5},
+        {"country": "US", "name": "Fluence Energy", "ticker": "FLNC", "per": 35.0, "pbr": 4.0, "roe": 11.0, "div": 0.0}
+      ]
+    }
+  ]
+}

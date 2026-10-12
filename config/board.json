@@ -1,0 +1,37 @@
+{
+  "_설명": "괴리율 보드 설정입니다. 우선주 괴리율과 지주사 NAV 할인율은 매일 시세로 자동 계산됩니다. 지주사 지분율(pct)은 DART '타법인 출자현황'을 보고 확인해 주세요. 지금 값은 대략적인 예시이며 example: true 로 표시됩니다.",
+  "pref_pairs": [
+    {"common": "005930", "pref": "005935"},
+    {"common": "005380", "pref": "005387"},
+    {"common": "051910", "pref": "051915"},
+    {"common": "066570", "pref": "066575"},
+    {"common": "090430", "pref": "090435"}
+  ],
+  "holdcos": [
+    {"name": "LG", "code": "003550", "example": true, "holdings": [{"code": "066570", "pct": 33.7}, {"code": "051910", "pct": 33.3}, {"code": "032640", "pct": 37.7}, {"code": "051900", "pct": 34.0}]},
+    {"name": "SK㈜", "code": "034730", "example": true, "holdings": [{"code": "096770", "pct": 36.2}, {"code": "017670", "pct": 30.6}, {"code": "402340", "pct": 31.5}]},
+    {"name": "삼성물산", "code": "028260", "example": true, "holdings": [{"code": "005930", "pct": 5.0}, {"code": "207940", "pct": 43.1}, {"code": "032830", "pct": 19.3}]},
+    {"name": "HD현대", "code": "267250", "example": true, "holdings": [{"code": "009540", "pct": 35.1}, {"code": "267260", "pct": 37.2}]},
+    {"name": "한화", "code": "000880", "example": true, "holdings": [{"code": "012450", "pct": 34.0}, {"code": "088350", "pct": 43.2}]}
+  ],
+  "valueup": {
+    "_설명": "DART '기업가치 제고 계획' 공시를 보고 직접 입력합니다. target/now 는 같은 단위의 숫자입니다.",
+    "example": true,
+    "items": [
+      {"name": "KB금융", "promise": "2026년 주주환원율 50%", "target": 50, "now": 44, "sub_goal": "ROE 10%", "sub_now": "9.6%"},
+      {"name": "현대차", "promise": "2027년까지 TSR 35%", "target": 35, "now": 27, "sub_goal": "자사주 소각 4조", "sub_now": "2.5조"},
+      {"name": "삼성전자", "promise": "3년 10조 자사주", "target": 10, "now": 6.2, "sub_goal": "소각 3조", "sub_now": "3조"},
+      {"name": "LG전자", "promise": "PBR 1배 회복", "target": 1.0, "now": 0.82, "sub_goal": "ROE 10%", "sub_now": "7.3%"}
+    ]
+  },
+  "jpkr": {
+    "_설명": "한국·일본 비교 지표입니다. 거래소 발표 자료를 보고 직접 입력합니다.",
+    "example": true,
+    "columns": ["일본 프라임 2023.3", "일본 프라임 현재", "한국 KOSPI 2024.1", "한국 KOSPI 현재"],
+    "rows": [
+      {"label": "PBR 1배 미만 비중", "values": ["약 50%", "38%", "66%", "57%"]},
+      {"label": "평균 주주환원율", "values": ["52%", "61%", "36%", "42%"]},
+      {"label": "평균 ROE", "values": ["8.6%", "9.4%", "7.1%", "7.8%"]}
+    ]
+  }
+}
