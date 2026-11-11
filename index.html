@@ -508,7 +508,7 @@ function valGaps(st){
   const avg=k=>{const v=st.peers.map(p=>p[k]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const effs=st.peers.map(p=>effOf(p[4],p[5])).filter(x=>x!=null), effPeer=effs.length?effs.reduce((a,b)=>a+b,0)/effs.length:null;
   const g=(x,y)=>x!=null&&y?(x/y-1)*100:null, effMe=effOf(st.me[1],st.me[2]);
-  return {per:st.me[0]>0?g(st.me[0],avg(3)):null,pbr:g(st.me[1],avg(4)),eff:g(effMe,effPeer),
+  return {per:st.me[0]>0&&st.me[0]<=200?g(st.me[0],avg(3)):null,pbr:g(st.me[1],avg(4)),eff:g(effMe,effPeer),
     div:st.me[3]!=null&&avg(6)!=null?st.me[3]-st.peers.reduce((a,p)=>a+(p[6]||0),0)/st.peers.length:null};
 }
 function renderValuation(st){
