@@ -175,6 +175,8 @@ def fetch_metrics_yahoo(ticker):
 
 
 def yahoo_ticker(country, ticker):
+    if "." in ticker:  # 3750.HK 처럼 이미 Yahoo 형식이면 그대로
+        return ticker
     return f"{ticker}.T" if country == "JP" else ticker
 
 
@@ -183,12 +185,21 @@ def dart_corp_codes(key):
     raw = http_get(f"{DART}/corpCode.xml", {"crtfc_key": key}, raw=True)
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         xml = z.read(z.namelist()[0])
-    out = {}
+    out, names = {}, {}
     for el in ET.fromstring(xml).iter("list"):
         sc = (el.findtext("stock_code") or "").strip()
         if sc:
             out[sc] = el.findtext("corp_code")
-    return out
+            names[norm_name(el.findtext("corp_name"))] = sc
+    return out, names
+
+
+def norm_name(n):
+    """'㈜LG화학', '삼성전자(주)', '주식회사 카카오' → 'lg화학', '삼성전자', '카카오'"""
+    n = (n or "").lower()
+    for t in ("주식회사", "(주)", "㈜", "(株)", " "):
+        n = n.replace(t, "")
+    return n
 
 
 ACCOUNTS = {"rev": ["매출액", "수익(매출액)", "영업수익"], "op": ["영업이익", "영업이익(손실)"],
@@ -279,6 +290,97 @@ def fetch_news_google(name):
     return out
 
 
+# 제목에서 찾을 이름 → 화면에 보여줄 이름. 일반 단어와 헷갈리는 이름(대신, 신영 등)은 '증권'까지 붙여서 찾음
+BROKER_NAMES = {"미래에셋": "미래에셋증권", "한국투자": "한국투자증권", "NH투자": "NH투자증권", "KB증권": "KB증권",
+    "삼성증권": "삼성증권", "키움": "키움증권", "신한투자": "신한투자증권", "하나증권": "하나증권", "대신증권": "대신증권",
+    "메리츠": "메리츠증권", "유안타": "유안타증권", "교보증권": "교보증권", "하이투자": "하이투자증권", "IBK투자": "IBK투자증권",
+    "DB금융투자": "DB증권", "DB증권": "DB증권", "SK증권": "SK증권", "현대차증권": "현대차증권", "한화투자": "한화투자증권",
+    "이베스트": "LS증권", "LS증권": "LS증권", "유진투자": "유진투자증권", "BNK투자": "BNK투자증권", "iM증권": "iM증권",
+    "다올투자": "다올투자증권", "상상인증권": "상상인증권", "부국증권": "부국증권", "한양증권": "한양증권", "흥국증권": "흥국증권",
+    "케이프투자": "케이프투자증권", "신영증권": "신영증권", "모건스탠리": "모건스탠리", "골드만삭스": "골드만삭스", "JP모건": "JP모건",
+    "맥쿼리": "맥쿼리", "씨티": "씨티", "UBS": "UBS", "노무라": "노무라", "CLSA": "CLSA", "HSBC": "HSBC", "BofA": "BofA",
+    "뱅크오브아메리카": "BofA", "번스타인": "번스타인", "제프리스": "제프리스", "바클레이즈": "바클레이즈", "도이치": "도이치"}
+BROKERS = list(BROKER_NAMES)
+_AMT = re.compile(r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(만)?\s*(\d{1,4}(?:,\d{3})?)?\s*(천)?\s*원")
+
+
+def parse_won(m):
+    """'25만원'→250000, '30만9천원'→309000, '8만5000원'→85000, '1,600,000원'→1600000"""
+    a, man, b, cheon = m.group(1), m.group(2), m.group(3), m.group(4)
+    a = float(a.replace(",", ""))
+    if man:
+        v = a * 10000
+        if b:
+            b = float(b.replace(",", ""))
+            v += b * 1000 if cheon else b
+        return int(v)
+    return int(a)
+
+
+def parse_target_headline(title, name, price):
+    """뉴스 제목에서 증권사·목표주가·방향을 뽑습니다. 확실하지 않으면 None."""
+    t = title.replace("목표가", "목표주가")
+    if name.replace(" ", "").lower() not in t.replace(" ", "").lower() or "목표주가" not in t:
+        return None
+    amts = list(_AMT.finditer(t))
+    if len(amts) != 1:  # 금액이 없거나 여러 개(여러 종목 묶음 기사)면 건너뜀
+        return None
+    tp = parse_won(amts[0])
+    if not price or not (price * 0.3 <= tp <= price * 3):
+        return None
+    broker = next((b for b in BROKERS if b in t), None)
+    if not broker:
+        return None
+    d = "up" if "상향" in t or "올려" in t or "높여" in t else "down" if ("하향" in t or "내려" in t or "낮춰" in t) else "flat" if "유지" in t else None
+    rating = "매수" if ("매수" in t or "Buy" in t or "비중확대" in t) else "중립" if ("중립" in t or "Hold" in t) else "매도" if "매도" in t else ""
+    return {"broker": BROKER_NAMES[broker], "tp": tp, "dir": d, "rating": rating}
+
+
+def fetch_target_reports(name, price, days=30):
+    """Google 뉴스에서 '목표주가' 기사 제목을 모아 증권사별 최신 1건씩."""
+    raw = http_get(GOOGLE_NEWS, {"q": f"{name} 목표주가 when:{days}d", "hl": "ko", "gl": "KR", "ceid": "KR:ko"}, raw=True)
+    seen, out = set(), []
+    items = []
+    for it in ET.fromstring(raw).iter("item"):
+        title = it.findtext("title") or ""
+        src = it.findtext("source") or ""
+        if src and title.endswith(" - " + src):
+            title = title[: -len(" - " + src)]
+        try:
+            dt = datetime.strptime(it.findtext("pubDate"), "%a, %d %b %Y %H:%M:%S %Z")
+        except Exception:
+            continue
+        items.append((dt, title, it.findtext("link") or "", src))
+    for dt, title, link, src in sorted(items, reverse=True):
+        r = parse_target_headline(title, name, price)
+        if not r or r["broker"] in seen:
+            continue
+        seen.add(r["broker"])
+        out.append({"date": dt.strftime("%Y-%m-%d"), "broker": r["broker"], "title": title, "rating": r["rating"],
+                    "tp": r["tp"], "prev_tp": None, "dir": r["dir"], "url": link, "source": src or "뉴스"})
+        if len(out) >= 8:
+            break
+    return out
+
+
+def fetch_holdings(corp_code, key, names):
+    """DART 타법인출자현황에서 상장 자회사 지분율(%). [{code, pct, name}]"""
+    y = datetime.now(KST).year
+    for yr, rc in ((y, "11012"), (y - 1, "11011"), (y - 2, "11011")):
+        js = http_get(f"{DART}/otrCprInvstmntSttus.json", {"crtfc_key": key, "corp_code": corp_code, "bsns_year": str(yr), "reprt_code": rc})
+        if js.get("status") != "000":
+            continue
+        res = {}
+        for x in js.get("list", []):
+            sc = names.get(norm_name(x.get("inv_prm")))
+            pct = num(x.get("trmend_blce_qota_rt"))
+            if sc and pct and pct >= 1:
+                res[sc] = {"code": sc, "pct": pct, "name": x.get("inv_prm")}
+        if res:
+            return list(res.values()), f"{yr}년 {'반기' if rc == '11012' else '사업'}보고서"
+    return None, None
+
+
 # ---------------------------------------------------------------- 계산
 def valuation(mcap_won, fin, kr_div):
     if not mcap_won or not fin:
@@ -291,7 +393,7 @@ def valuation(mcap_won, fin, kr_div):
     return {"per": per, "pbr": pbr, "roe": roe, "div": kr_div}
 
 
-def build_board(board, price_of, sample):
+def build_board(board, price_of, sample, holdings_of=None):
     names = {}
     pref = []
     for p in board["pref_pairs"]:
@@ -312,8 +414,13 @@ def build_board(board, price_of, sample):
         me = price_of(h["code"])
         if not me or not me["mcap"]:
             continue
+        holdings, src = h["holdings"], None
+        if holdings_of:
+            auto, src = holdings_of(h["code"])
+            if auto:
+                holdings, h = auto, dict(h, example=False)
         val = 0
-        for x in h["holdings"]:
+        for x in holdings:
             ch = price_of(x["code"])
             if ch and ch["mcap"]:
                 val += ch["mcap"] * x["pct"] / 100
@@ -321,7 +428,8 @@ def build_board(board, price_of, sample):
             me = dict(me, mcap=val * (0.35 + (int(h["code"]) % 20) / 100))
         if val:
             nav.append({"name": h["name"], "nav": round(val / 1e12, 1), "mcap": round(me["mcap"] / 1e12, 1),
-                        "disc": round((1 - me["mcap"] / val) * 100, 1), "example": bool(h.get("example"))})
+                        "disc": round((1 - me["mcap"] / val) * 100, 1), "example": bool(h.get("example")),
+                        "n": len(holdings), "src": src})
     return {"pref": pref, "nav": nav, "valueup": board["valueup"], "jpkr": board["jpkr"]}
 
 
@@ -400,10 +508,10 @@ def main():
     log(f"주가 출처: {source}")
 
     cache, shares_cache = {}, {}
-    corp = {}
+    corp, corp_names = {}, {}
     if key_dart and not sample:
         try:
-            corp = dart_corp_codes(key_dart)
+            corp, corp_names = dart_corp_codes(key_dart)
             log(f"DART 회사코드 {len(corp)}개 불러옴")
         except Exception as e:
             log("DART 회사코드 실패:", e)
@@ -480,7 +588,11 @@ def main():
         return fallback
 
     out = {"updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"), "sample": sample, "price_source": source,
-           "peers_as_of": stocks_cfg.get("peers_as_of"), "stocks": {}}
+           "peers_as_of": stocks_cfg.get("peers_as_of"), "coe": {k: v for k, v in stocks_cfg.get("coe", {}).items() if not k.startswith("_")},
+           "featured": stocks_cfg.get("featured", []), "stocks": {}}
+    sectors = stocks_cfg.get("sectors", {})
+    bars_dir = os.path.join(ROOT, "data", "bars")
+    os.makedirs(bars_dir, exist_ok=True)
     for s in stocks_cfg["stocks"]:
         code = s["code"]
         p = price_of(code)
@@ -505,15 +617,28 @@ def main():
                 news = fetch_news(s["name"], nid, nsec) if nid and nsec else fetch_news_google(s["name"])
             except Exception as e:
                 log(f"{s['name']} 뉴스 실패: {e}")
+        manual = reports_cfg.get("reports", {}).get(code, [])
+        auto = []
+        if not sample:
+            try:
+                auto = fetch_target_reports(s["name"], p["bars"][-1]["c"])
+            except Exception as e:
+                log(f"{s['name']} 목표가 기사 실패: {e}")
+        brokers = {r["broker"] for r in manual}
+        reports = sorted(manual + [r for r in auto if r["broker"] not in brokers], key=lambda r: r["date"], reverse=True)
+        bars = p["bars"][-260:]
+        with open(os.path.join(bars_dir, f"{code}.json"), "w", encoding="utf-8") as f:
+            json.dump(bars, f, separators=(",", ":"))
         out["stocks"][code] = {
             "name": s["name"], "alias": s.get("alias", []), "mkt": s.get("mkt", ""), "sector": s.get("sector", ""),
-            "bars": p["bars"][-260:], "mcap": p["mcap"], "fin": fin,
+            "last": bars[-1], "prev": bars[-2]["c"] if len(bars) > 1 else None, "n_bars": len(bars),
+            "mcap": p["mcap"], "fin": fin,
             "me": valuation(p["mcap"], fin, kr_div_of(code, s.get("kr_div"))),
-            "peers": [peer_of(x) for x in s.get("peers", [])],
-            "reports": sorted(reports_cfg["reports"].get(code, []), key=lambda r: r["date"], reverse=True),
+            "peers": [peer_of(x) for x in (s.get("peers") or sectors.get(s.get("sector"), []))],
+            "reports": reports,
             "news": news,
         }
-        log(f"{s['name']}: 시세 {len(p['bars'])}일, 재무 {'있음' if fin else '없음'}, 뉴스 {len(news)}건")
+        log(f"{s['name']}: 시세 {len(bars)}일, 재무 {'있음' if fin else '없음'}, 뉴스 {len(news)}건, 목표가 기사 {len(auto)}건")
 
     if not out["stocks"]:
         log("받아온 종목이 없어 기존 데이터를 그대로 둡니다. API 키를 확인해 주세요.")
@@ -521,7 +646,20 @@ def main():
     if peer_auto["n"]:
         out["peers_as_of"] = f"Yahoo Finance 자동 ({datetime.now(KST).strftime('%Y-%m-%d')})"
     out["order"] = list(out["stocks"].keys())  # 화면에 보여줄 순서 (설정 파일 순서)
-    out["board"] = build_board(board_cfg, price_of, sample)
+    hold_cache = {}
+
+    def holdings_of(code):
+        if sample or code not in corp:
+            return None, None
+        if code not in hold_cache:
+            try:
+                hold_cache[code] = fetch_holdings(corp[code], key_dart, corp_names)
+            except Exception as e:
+                log(f"{code} 출자현황 실패: {e}")
+                hold_cache[code] = (None, None)
+        return hold_cache[code]
+
+    out["board"] = build_board(board_cfg, price_of, sample, holdings_of)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))

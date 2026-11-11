@@ -274,7 +274,7 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
       <div class="ph"><div><div class="eyebrow">해외 피어 대비 괴리율</div><h3 id="peerTitle"></h3></div><span class="sub" id="peerAsOf"></span></div>
       <div class="kpis" id="vkpis"></div>
       <div class="tbl"><table>
-        <thead><tr><th>기업</th><th class="r">PER</th><th class="r">PBR</th><th class="r">ROE</th><th class="r">배당수익률</th><th class="r">PBR ÷ ROE</th></tr></thead>
+        <thead><tr><th>기업</th><th class="r">PER</th><th class="r">PBR</th><th class="r">ROE</th><th class="r">배당수익률</th><th class="r">적정 PBR 대비</th></tr></thead>
         <tbody id="peers"></tbody>
       </table></div>
       <p class="note" id="vnote"></p>
@@ -298,6 +298,11 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
 
   <!-- BOARD VIEW -->
   <div id="vBoard" style="display:none;flex-direction:column;gap:18px">
+    <section class="panel">
+      <div class="ph"><div><div class="eyebrow">전 종목 밸류에이션</div><h3>수익성 대비 얼마나 싸게 거래되나</h3></div><span class="sub" id="uniSub"></span></div>
+      <div class="tbl"><table id="uni"></table></div>
+      <p class="note" id="uniNote"></p>
+    </section>
     <section class="panel">
       <div class="ph"><div><div class="eyebrow">한국 vs 일본</div><h3>밸류업은 어디까지 왔나</h3></div><span class="sub">PBR 1배 미만 기업 비중</span></div>
       <div class="tbl"><table id="jpkr"></table></div>
@@ -326,17 +331,20 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
 // ---------- data (data/site.json 에서 불러옴) ----------
 let S={}, R={}, BOARD={}, META={};
 function adapt(js){
-  META={updated:js.updated_at,sample:js.sample,peersAsOf:js.peers_as_of,order:js.order||Object.keys(js.stocks),src:js.price_source};
+  META={updated:js.updated_at,sample:js.sample,peersAsOf:js.peers_as_of,order:js.order||Object.keys(js.stocks),src:js.price_source,
+    coe:js.coe||{KR:10,US:9,JP:7.5},featured:js.featured||[]};
   for(const [c,s] of Object.entries(js.stocks)){
-    const last=s.bars[s.bars.length-1];
-    S[c]={name:s.name,alias:(s.alias||[]).map(a=>a.toLowerCase()),mkt:s.mkt,sector:s.sector,price:last.c,mcap:s.mcap,fin:s.fin,
+    const last=s.last||(s.bars&&s.bars[s.bars.length-1]);
+    S[c]={name:s.name,alias:(s.alias||[]).map(a=>a.toLowerCase()),mkt:s.mkt,sector:s.sector,price:last.c,prev:s.prev,mcap:s.mcap,fin:s.fin,
       me:[s.me.per,s.me.pbr,s.me.roe,s.me.div],peers:(s.peers||[]).map(p=>[p.country,p.name,p.ticker,p.per,p.pbr,p.roe,p.div]),
-      bars:s.bars.map(b=>({time:b.t,open:b.o,high:b.h,low:b.l,close:b.c,volume:b.v}))};
-    R[c]={reports:(s.reports||[]).map(r=>[r.date.slice(5).replace("-","."),r.broker,r.title,r.rating,r.tp,r.prev_tp,[],r.url||"",!!r.example]),
+      bars:s.bars?s.bars.map(toBar):null};
+    // 리포트: [날짜, 증권사, 제목, 의견, 목표가, 이전 목표가(없으면 null), -, 링크, 예시 여부, 방향(up/down/flat), 출처]
+    R[c]={reports:(s.reports||[]).map(r=>[r.date.slice(5).replace("-","."),r.broker,r.title,r.rating||"",r.tp,r.prev_tp??null,[],r.url||"",!!r.example,r.dir||null,r.source||""]),
       news:(s.news||[]).map(n=>[n.date,n.title,n.summary,n.url||""])};
   }
   BOARD=js.board||{};
 }
+const toBar=b=>({time:b.t,open:b.o,high:b.h,low:b.l,close:b.c,volume:b.v});
 // ---------- helpers ----------
 const $=id=>document.getElementById(id);
 const fmt=n=>n==null||isNaN(n)?"—":Math.round(n).toLocaleString("ko-KR");
@@ -483,8 +491,19 @@ function renderChart(bars,A){
 }
 
 // ---------- rendering ----------
-function renderStock(){
-  const st=S[cur], bars=st.bars;
+async function renderStock(){
+  const st=S[cur], code=cur;
+  renderValuation(st); renderReports();
+  {const c0=st.prev?(st.price/st.prev-1)*100:null;$("price").textContent=fmt(st.price)+"원";$("chg").className="num "+cls(c0);$("chg").textContent=c0==null?"":(c0>0?"▲ ":c0<0?"▼ ":"")+sign(c0,2);}
+  $("code").textContent=`${st.mkt} · ${cur} · ${st.sector}`;$("name").textContent=st.name;
+  $("quick").querySelectorAll(".qk").forEach(b=>b.setAttribute("aria-current",b.dataset.c===cur));
+  if(!st.bars){
+    $("guide").innerHTML=`<p style="color:var(--muted)">차트 불러오는 중…</p>`;
+    try{const r=await fetch(`data/bars/${code}.json`,{cache:"no-store"});if(!r.ok)throw 0;st.bars=(await r.json()).map(toBar);}
+    catch(e){$("guide").innerHTML=`<p>차트 데이터를 불러오지 못했어요. 새로고침해 주세요.</p>`;return;}
+    if(cur!==code||view!=="stock")return;
+  }
+  const bars=st.bars;
   if(bars.length<130){$("guide").innerHTML=`<p>시세가 ${bars.length}일치뿐이라 지표를 계산할 수 없어요. 130일 이상 쌓이면 보여드려요.</p>`;return;}
   const A=analyze(bars), L=A.L;
   lastA=A; lastBars=bars;
@@ -498,35 +517,54 @@ function renderStock(){
   $("guide").innerHTML=guideCards(A,bars).map(c=>`<div class="card"><div class="top"><span class="eyebrow">${c.step}</span><span class="st ${c.st}">${c.st==="good"?"긍정":c.st==="warn"?"주의":"중립"}</span></div>
     <h4>${esc(c.t)}</h4><p>${esc(c.body)}</p><p class="how">${esc(c.how)}</p><details><summary>더 깊이 알아보기</summary><p>${esc(c.deep)}</p></details></div>`).join("");
   $("aiChartText").textContent="지표 하나만 보면 틀리기 쉬워요. 버튼을 누르면 위 신호들이 서로 같은 방향을 가리키는지, 엇갈리는지를 묶어서 설명해 드려요.";
-  renderValuation(st);
-  renderReports();
-  $("quick").querySelectorAll(".qk").forEach(b=>b.setAttribute("aria-current",b.dataset.c===cur));
 }
-// ROE가 3% 미만이면 PBR÷ROE 값이 비정상적으로 커져 비교 의미가 없어서 계산하지 않음
-function effOf(pbr,roe){return pbr!=null&&roe!=null&&roe>=3?pbr/roe:null;}
+// 적정 PBR = ROE ÷ 자기자본비용(국가별 가정). 실제 PBR이 적정 PBR보다 몇 % 낮은지(음수)·높은지(양수).
+// ROE가 3% 미만이면 적정 PBR이 0에 가까워져 비교 의미가 없어서 계산하지 않음
+const coeOf=country=>META.coe[country]??10;
+function fairGap(pbr,roe,country){if(pbr==null||roe==null||roe<3)return null;const fair=roe/coeOf(country);return (pbr/fair-1)*100;}
 function valGaps(st){
   const avg=k=>{const v=st.peers.map(p=>p[k]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-  const effs=st.peers.map(p=>effOf(p[4],p[5])).filter(x=>x!=null), effPeer=effs.length?effs.reduce((a,b)=>a+b,0)/effs.length:null;
-  const g=(x,y)=>x!=null&&y?(x/y-1)*100:null, effMe=effOf(st.me[1],st.me[2]);
-  return {per:st.me[0]>0&&st.me[0]<=200?g(st.me[0],avg(3)):null,pbr:g(st.me[1],avg(4)),eff:g(effMe,effPeer),
-    div:st.me[3]!=null&&avg(6)!=null?st.me[3]-st.peers.reduce((a,p)=>a+(p[6]||0),0)/st.peers.length:null};
+  const g=(x,y)=>x!=null&&y?(x/y-1)*100:null;
+  const pf=st.peers.map(p=>fairGap(p[4],p[5],p[0])).filter(x=>x!=null), peerFair=pf.length?pf.reduce((a,b)=>a+b,0)/pf.length:null;
+  const fair=fairGap(st.me[1],st.me[2],"KR");
+  const divs=st.peers.map(p=>p[6]).filter(x=>x!=null);
+  return {per:st.me[0]>0&&st.me[0]<=200?g(st.me[0],avg(3)):null,pbr:g(st.me[1],avg(4)),fair,peerFair,
+    rel:fair!=null&&peerFair!=null?fair-peerFair:null,
+    div:st.me[3]!=null&&divs.length?st.me[3]-divs.reduce((a,b)=>a+b,0)/divs.length:null};
 }
 function renderValuation(st){
   $("peerTitle").textContent=`${st.name} vs 미국·일본 ${st.sector}`;
   const rows=[["KR",st.name,cur,...st.me],...st.peers], G=valGaps(st);
   $("vkpis").innerHTML=`<div class="kpi"><div class="l">PER 괴리율</div><div class="v num ${cls(G.per)}">${sign(G.per)}</div></div>
     <div class="kpi"><div class="l">PBR 괴리율</div><div class="v num ${cls(G.pbr)}">${sign(G.pbr)}</div></div>
-    <div class="kpi"><div class="l">ROE 감안 PBR 괴리율</div><div class="v num ${cls(G.eff)}">${sign(G.eff)}</div></div>
+    <div class="kpi"><div class="l">적정 PBR 대비 (피어 평균 ${sign(G.peerFair,0)})</div><div class="v num ${cls(G.fair)}">${sign(G.fair)}</div></div>
     <div class="kpi"><div class="l">배당수익률 차이</div><div class="v num">${G.div==null?"—":(G.div>0?"+":"")+G.div.toFixed(1)+"%p"}</div></div>`;
   $("peers").innerHTML=rows.map((p,i)=>`<tr class="${i===0?"me":""}"><td><span class="flag ${p[0]}">${p[0]}</span>${esc(p[1])} <span class="num" style="color:var(--muted);font-weight:400">${esc(p[2])}</span></td>
-    <td class="r num">${p[3]!=null&&p[3]<0?"적자":p[3]>200?"이익 미미":fx(p[3],1,"배")}</td><td class="r num">${fx(p[4],2,"배")}</td><td class="r num">${fx(p[5],1,"%")}</td><td class="r num">${fx(p[6],1,"%")}</td><td class="r num">${fx(effOf(p[4],p[5]),3)}</td></tr>`).join("");
-  const e=G.eff;
-  $("vnote").innerHTML=`<b>읽는 법</b> · PBR이 낮다고 무조건 싼 건 아니에요. 돈을 잘 버는 회사(ROE가 높은 회사)는 PBR이 높은 게 정상이에요. 그래서 <b>PBR ÷ ROE</b>로 수익성 1%당 얼마를 쳐주는지 비교해요. `+
-    (e==null?`${esc(st.name)}는 ROE가 3% 미만(또는 적자)이거나 재무 데이터가 없어서 이 비교가 의미 있게 계산되지 않아요. 이익이 정상화되기 전에는 PBR만 참고하세요. 한국 종목의 PER·PBR·ROE는 DART 최근 사업연도 연결재무(지배·비지배 포함 순이익)와 시가총액으로 계산해요.`:
-    `${esc(st.name)}는 이 기준으로 피어보다 <b class="${cls(e)}">${Math.abs(e).toFixed(0)}% ${e<0?"할인":"할증"}</b>돼 있어요${e<-20?". 수익성을 감안해도 싸게 거래되는, 전형적인 코리아 디스카운트 사례예요.":e>20?". 수익성 대비 비싸게 거래되고 있어 기대가 많이 반영된 상태예요.":"."} 한국 종목 지표는 DART 최근 사업연도 연결재무와 시가총액으로 계산해요.`);
+    <td class="r num">${p[3]!=null&&p[3]<0?"적자":p[3]>200?"이익 미미":fx(p[3],1,"배")}</td><td class="r num">${fx(p[4],2,"배")}</td><td class="r num">${fx(p[5],1,"%")}</td><td class="r num">${fx(p[6],1,"%")}</td><td class="r num ${cls(fairGap(p[4],p[5],p[0]))}">${sign(fairGap(p[4],p[5],p[0]))}</td></tr>`).join("");
+  const e=G.fair, co=META.coe;
+  const fairP=st.me[2]!=null?st.me[2]/coeOf("KR"):null;
+  $("vnote").innerHTML=`<b>읽는 법</b> · 자기자본 1원으로 ROE만큼 버는 회사라면, 투자자가 요구하는 수익률(자기자본비용)을 기준으로 <b>적정 PBR = ROE ÷ 자기자본비용</b>이에요. 예를 들어 ROE 10%, 자기자본비용 10%면 적정 PBR은 1배예요. 실제 PBR이 이보다 낮을수록 "버는 만큼 평가받지 못한다"는 뜻이에요. `+
+    (e==null?`${esc(st.name)}는 ROE가 3% 미만(또는 적자)이거나 재무 데이터가 없어서 이 비교가 의미 있게 계산되지 않아요.`:
+    `${esc(st.name)}는 ROE ${fx(st.me[2],1,"%")} 기준 적정 PBR이 ${fx(fairP,2,"배")}인데 실제 PBR은 ${fx(st.me[1],2,"배")}라 <b class="${cls(e)}">${Math.abs(e).toFixed(0)}% ${e<0?"낮게":"높게"}</b> 거래돼요.`+
+     (G.peerFair!=null?` 같은 기준으로 해외 피어는 평균 ${sign(G.peerFair,0)}이라, 차이는 <b class="${cls(G.rel)}">${(G.rel>0?"+":"")+G.rel.toFixed(0)}%p</b>예요${G.rel<=-20?". 수익성을 감안해도 해외보다 덜 평가받는, 전형적인 코리아 디스카운트 사례예요.":G.rel>=20?". 해외 피어보다 기대가 더 많이 반영된 상태예요.":"."}`:""))+
+    ` <span style="color:var(--muted)">가정한 자기자본비용: 한국 ${co.KR}% · 미국 ${co.US}% · 일본 ${co.JP}%. 한국 종목 지표는 DART 최근 사업연도 연결재무와 시가총액, 피어는 Yahoo Finance 지난 12개월 기준이에요.</span>`;
 }
 const exTag=x=>x?` <span class="pill hold" style="font-size:10.5px">예시</span>`:"";
+let uniSort={k:"rel",asc:true};
+function renderUniverse(){
+  const rows=Object.entries(S).map(([c,s])=>{const G=valGaps(s);return {c,name:s.name,sector:s.sector,mcap:s.mcap?s.mcap/1e12:null,per:s.me[0],pbr:s.me[1],roe:s.me[2],fair:G.fair,peer:G.peerFair,rel:G.rel};});
+  const k=uniSort.k, dir=uniSort.asc?1:-1;
+  rows.sort((a,b)=>{const x=a[k],y=b[k];if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return typeof x==="string"?x.localeCompare(y)*dir:(x-y)*dir;});
+  const cols=[["name","종목"],["sector","업종"],["mcap","시가총액(조)"],["per","PER"],["pbr","PBR"],["roe","ROE"],["fair","적정 PBR 대비"],["peer","해외 피어 평균"],["rel","차이(%p)"]];
+  $("uni").innerHTML=`<thead><tr>${cols.map(([key,l],i)=>`<th class="${i>1?"r":""}"><button type="button" class="sortb" data-k="${key}" style="all:unset;cursor:pointer">${l}${uniSort.k===key?(uniSort.asc?" ▲":" ▼"):""}</button></th>`).join("")}</tr></thead><tbody class="click">`+
+    rows.map(r=>`<tr data-c="${r.c}"><td><b>${esc(r.name)}</b></td><td style="color:var(--muted)">${esc(r.sector)}</td><td class="r num">${fx(r.mcap,1)}</td>
+      <td class="r num">${r.per!=null&&r.per<0?"적자":r.per>200?"이익 미미":fx(r.per,1)}</td><td class="r num">${fx(r.pbr,2)}</td><td class="r num">${fx(r.roe,1,"%")}</td>
+      <td class="r num ${cls(r.fair)}">${sign(r.fair,0)}</td><td class="r num">${sign(r.peer,0)}</td><td class="r num"><b class="${cls(r.rel)}">${r.rel==null?"—":(r.rel>0?"+":"")+r.rel.toFixed(0)}</b></td></tr>`).join("")+"</tbody>";
+  $("uniSub").textContent=`${rows.length}종목 · 열 이름을 누르면 정렬`;
+  $("uniNote").innerHTML=`<b>읽는 법</b> · <b>적정 PBR 대비</b>는 실제 PBR이 ROE ÷ 자기자본비용(한국 ${META.coe.KR}%)보다 몇 % 낮은지예요. <b>차이</b>가 크게 음수일수록 해외 동종 기업보다 수익성 대비 더 싸게 거래되는 종목이에요. 행을 누르면 종목 분석으로 이동해요.`;
+}
 function renderBoard(){
+  renderUniverse();
   const j=BOARD.jpkr||{columns:[],rows:[]};
   $("jpkr").innerHTML=`<thead><tr><th>지표${exTag(j.example)}</th>${j.columns.map(x=>`<th class="r">${esc(x)}</th>`).join("")}</tr></thead><tbody>`+
     j.rows.map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(x=>`<td class="r num">${esc(x)}</td>`).join("")}</tr>`).join("")+"</tbody>";
@@ -534,34 +572,40 @@ function renderBoard(){
     (BOARD.pref||[]).map(r=>`<tr><td>${esc(r.common)}</td><td>${esc(r.pref)}</td><td class="r num">${fmt(r.cp)}</td><td class="r num">${fmt(r.pp)}</td><td class="r num"><b>${fx(r.gap,1,"%")}</b></td>
       <td class="r num ${r.gap>r.gap_avg+2?"down":r.gap<r.gap_avg-2?"up":""}">${fx(r.gap_avg,1,"%")}</td><td><div class="meter"><b style="width:${Math.max(0,Math.min(100,r.gap/70*100))}%"></b></div></td></tr>`).join("")+"</tbody>";
   $("nav").innerHTML=`<thead><tr><th>지주사</th><th class="r">보유지분 가치</th><th class="r">시가총액</th><th class="r">할인율</th><th></th></tr></thead><tbody>`+
-    (BOARD.nav||[]).map(r=>`<tr><td>${esc(r.name)}${exTag(r.example)}</td><td class="r num">${fx(r.nav,1)}</td><td class="r num">${fx(r.mcap,1)}</td><td class="r num"><b>${fx(r.disc,0,"%")}</b></td><td><div class="meter"><b style="width:${Math.max(0,Math.min(100,r.disc))}%"></b></div></td></tr>`).join("")+"</tbody>";
+    (BOARD.nav||[]).map(r=>`<tr><td>${esc(r.name)}${exTag(r.example)}${r.n?`<div style="color:var(--muted);font-size:11.5px">상장 자회사 ${r.n}곳${r.src?" · "+esc(r.src):""}</div>`:""}</td><td class="r num">${fx(r.nav,1)}</td><td class="r num">${fx(r.mcap,1)}</td><td class="r num"><b>${fx(r.disc,0,"%")}</b></td><td><div class="meter"><b style="width:${Math.max(0,Math.min(100,r.disc))}%"></b></div></td></tr>`).join("")+`<tr><td colspan="5" style="color:var(--muted);font-size:12px">보유지분 가치 = 상장 자회사 지분율(DART 타법인출자현황) × 자회사 시가총액. 비상장 자회사와 순차입금은 반영하지 않아요.</td></tr></tbody>`;
   const vu=BOARD.valueup||{items:[]};
   $("vu").innerHTML=`<thead><tr><th>기업${exTag(vu.example)}</th><th>핵심 약속</th><th>진행률</th><th></th><th>보조 지표 목표</th><th class="r">현재</th></tr></thead><tbody>`+
     vu.items.map(r=>{const p=Math.min(100,r.now/r.target*100);return `<tr><td>${esc(r.name)}</td><td>${esc(r.promise)}</td><td class="num">${p.toFixed(0)}%</td><td style="width:140px"><div class="meter"><b style="width:${p}%;background:${p>=90?"var(--good)":p>=60?"var(--accent)":"var(--warn)"}"></b></div></td><td>${esc(r.sub_goal)}</td><td class="r num">${esc(r.sub_now)}</td></tr>`}).join("")+"</tbody>";
 }
 // ---------- broker reports ----------
 let openRow=null, sfilter="all";
-function valGap(c){return valGaps(S[c]).eff;}
+// 목표가 방향: 이전 목표가가 있으면 비교, 없으면 기사 제목의 '상향/하향/유지'
+const dirOf=x=>x[5]!=null?(x[4]>x[5]?"up":x[4]<x[5]?"down":"flat"):x[9];
+const tpText=x=>x[5]!=null?`${fmt(x[5])}→${fmt(x[4])}원`:`${fmt(x[4])}원`;
 function rstats(c){
-  if(!R[c].reports.length)return {avg:null,hi:null,lo:null,buy:0,hold:0,up:null,rev:null,disp:null};
-  const r=R[c].reports,price=S[c].price,tps=r.map(x=>x[4]),avg=tps.reduce((a,b)=>a+b,0)/tps.length,buy=r.filter(x=>x[3]==="매수").length;
-  return {avg:Math.round(avg/100)*100,hi:Math.max(...tps),lo:Math.min(...tps),buy,hold:r.length-buy,up:(avg/price-1)*100,
-    rev:r.reduce((a,x)=>a+(x[4]/x[5]-1),0)/r.length*100,disp:(Math.max(...tps)-Math.min(...tps))/avg*100};
+  if(!R[c].reports.length)return {avg:null,hi:null,lo:null,buy:0,hold:0,etc:0,up:null,ups:0,downs:0,disp:null};
+  const r=R[c].reports,price=S[c].price,tps=r.map(x=>x[4]),avg=tps.reduce((a,b)=>a+b,0)/tps.length;
+  const buy=r.filter(x=>x[3]==="매수").length, hold=r.filter(x=>x[3]==="중립"||x[3]==="매도").length;
+  return {avg:Math.round(avg/100)*100,hi:Math.max(...tps),lo:Math.min(...tps),buy,hold,etc:r.length-buy-hold,up:(avg/price-1)*100,
+    ups:r.filter(x=>dirOf(x)==="up").length,downs:r.filter(x=>dirOf(x)==="down").length,disp:r.length>1?(Math.max(...tps)-Math.min(...tps))/avg*100:null};
 }
-const TYPES={cut:["목표가 하향·매수 유지","t-cut"],split:["의견 분산 큼","t-split"],up:["상향 우위","t-up"],gap:["수익성 대비 저평가","t-gap"]};
+const TYPES={cut:["목표가 하향·매수 유지","t-cut"],down:["하향 우위","t-cut"],split:["의견 분산 큼","t-split"],up:["상향 우위","t-up"],gap:["수익성 대비 저평가","t-gap"]};
 function signalsFor(c){
   const r=R[c].reports, st=rstats(c), out=[];
-  const cuts=r.filter(x=>x[4]<x[5]&&x[3]==="매수");
-  if(cuts.length) out.push({k:"cut",head:`${cuts.length}곳이 목표가를 내리면서 매수는 유지`,body:cuts.map(x=>`${x[1]} ${fmt(x[5])}→${fmt(x[4])}원`).join(", "),
+  const cuts=r.filter(x=>dirOf(x)==="down"&&x[3]==="매수");
+  if(cuts.length) out.push({k:"cut",head:`${cuts.length}곳이 목표가를 내리면서 매수는 유지`,body:cuts.map(x=>`${x[1]} ${tpText(x)}`).join(", "),
     why:"이익 추정은 낮추지만 주가가 이미 그만큼 빠졌다고 보는 경우가 많아요. 하향이 이어지면 다음 단계로 의견 하향이 올 수 있어 지켜볼 신호예요.",score:2+cuts.length});
-  if(st.disp>=25) out.push({k:"split",head:`목표가 최고·최저 차이 ${st.disp.toFixed(0)}%`,body:`${fmt(st.lo)}원 ~ ${fmt(st.hi)}원, 매수 ${st.buy} · 중립 ${st.hold}`,
+  if(st.disp>=25&&r.length>=3) out.push({k:"split",head:`목표가 최고·최저 차이 ${st.disp.toFixed(0)}%`,body:`${fmt(st.lo)}원 ~ ${fmt(st.hi)}원, ${r.length}곳`,
     why:"애널리스트들이 핵심 변수를 다르게 보고 있다는 뜻이에요. 누가 어떤 가정을 했는지 비교하면 이 종목의 진짜 쟁점이 보여요.",score:st.disp/10});
-  const ups=r.filter(x=>x[4]>x[5]).length,downs=r.filter(x=>x[4]<x[5]).length;
-  if(ups>=2&&ups>downs*2) out.push({k:"up",head:`목표가 상향 ${ups}곳, 하향 ${downs}곳`,body:`평균 목표가 변화 ${sign(st.rev)}`,
+  const ups=st.ups,downs=st.downs;
+  if(ups>=2&&ups>downs*2) out.push({k:"up",head:`최근 30일 목표가 상향 ${ups}곳, 하향 ${downs}곳`,body:r.filter(x=>dirOf(x)==="up").map(x=>`${x[1]} ${tpText(x)}`).join(", "),
     why:"여러 증권사가 동시에 추정치를 올리는 중이에요. 이익 추정 상향은 주가를 움직이는 대표적인 요인이에요.",score:ups});
-  const g=valGap(c);
-  if(g!=null&&g<=-25) out.push({k:"gap",head:`ROE 감안 PBR이 해외 피어보다 ${Math.abs(g).toFixed(0)}% 낮음`,body:`${S[c].peers.map(p=>p[1]).join("·")} 대비`,
-    why:"수익성을 감안해도 싸게 거래된다는 뜻이에요. 지배구조, 주주환원 같은 국내 요인이 할인 이유인지 확인해 볼 지점이에요.",score:Math.abs(g)/10});
+  if(!cuts.length&&downs>=2&&downs>ups*2) out.push({k:"down",head:`최근 30일 목표가 하향 ${downs}곳, 상향 ${ups}곳`,body:r.filter(x=>dirOf(x)==="down").map(x=>`${x[1]} ${tpText(x)}`).join(", "),
+    why:"여러 증권사가 이익 추정을 낮추고 있어요. 하향이 몰리는 구간에서는 실적 발표 전후 변동성이 커지기 쉬워요.",score:downs});
+  const G=valGaps(S[c]);
+  if(G.fair!=null&&G.fair<=-30&&(G.rel==null||G.rel<=-15)) out.push({k:"gap",head:`적정 PBR보다 ${Math.abs(G.fair).toFixed(0)}% 낮게 거래`+(G.peerFair!=null?` (해외 피어 평균 ${sign(G.peerFair,0)})`:""),
+    body:`ROE ${fx(S[c].me[2],1,"%")}, PBR ${fx(S[c].me[1],2,"배")} · ${S[c].peers.map(p=>p[1]).join("·")} 대비`,
+    why:"버는 만큼 평가받지 못하고 있고, 해외 동종 기업보다도 할인 폭이 커요. 지배구조, 주주환원, 이익 지속성 같은 국내 요인이 이유인지 확인해 볼 지점이에요.",score:Math.abs(G.fair)/10});
   return out.map(x=>({...x,c}));
 }
 function renderSignalsBoard(){
@@ -573,9 +617,9 @@ function renderSignalsBoard(){
     `<button class="sig" type="button" data-c="${x.c}"><span class="type ${TYPES[x.k][1]}">${TYPES[x.k][0]}</span><span class="row"><b>${S[x.c].name}</b></span><p>${esc(x.head)}</p></button>`).join("");
 }
 function defaultHl(c){
-  if(!R[c].reports.length)return [{t:"등록된 리포트가 없어요. config/reports.json 에 헤드라인을 추가하면 여기서 정리돼요."}];
-  const r=R[c].reports, st=rstats(c), ups=r.filter(x=>x[4]>x[5]), downs=r.filter(x=>x[4]<x[5]);
-  const out=[{t:`${r.length}개 증권사 평균 목표주가 ${fmt(st.avg)}원, 현재가 대비 ${sign(st.up)} 여력.`,src:`매수 ${st.buy} · 중립 ${st.hold}`}];
+  if(!R[c].reports.length)return [{t:"최근 30일 동안 뉴스에서 찾은 목표주가 기사가 없어요."}];
+  const r=R[c].reports, st=rstats(c), ups=r.filter(x=>dirOf(x)==="up"), downs=r.filter(x=>dirOf(x)==="down");
+  const out=[{t:`${r.length}개 증권사 평균 목표주가 ${fmt(st.avg)}원, 현재가 대비 ${sign(st.up)} 여력.`,src:r.map(x=>x[1]).join(", ")}];
   if(ups.length) out.push({t:`목표가 상향 ${ups.length}곳 · "${ups[0][2]}"`,src:ups.map(x=>x[1]).join(", ")});
   if(downs.length) out.push({t:`목표가 하향 ${downs.length}곳 · "${downs[0][2]}"`,src:downs.map(x=>x[1]).join(", "),risk:true});
   const sg=signalsFor(c)[0]; if(sg) out.push({t:sg.head,src:TYPES[sg.k][0]});
@@ -585,15 +629,15 @@ const renderHl=list=>{$("hl").innerHTML=list.map(h=>`<li class="${h.risk?"risk":
 function renderRows(){
   const r=R[cur].reports, price=S[cur].price;
   $("rows").innerHTML=r.map((x,i)=>{
-    const d=(x[4]/x[5]-1)*100, up=(x[4]/price-1)*100;
-    const chip=d===0?`<span class="chip flat">유지</span>`:`<span class="chip ${cls(d)}">${d>0?"상향":"하향"}</span>`;
+    const d=dirOf(x), up=(x[4]/price-1)*100;
+    const chip=d==="up"?`<span class="chip up">상향</span>`:d==="down"?`<span class="chip down">하향</span>`:d==="flat"?`<span class="chip flat">유지</span>`:"";
     let h=`<tr data-i="${i}" class="${openRow===i?"open":""}"><td class="num">${x[0]}</td><td>${x[1]}</td><td class="rtitle">${esc(x[2])}${exTag(x[8])}</td>
-      <td><span class="pill ${x[3]==="매수"?"buy":"hold"}">${x[3]}</span></td><td class="r num">${fmt(x[4])}${chip}</td><td class="r num ${cls(up)}">${sign(up)}</td></tr>`;
-    if(openRow===i) h+=`<tr class="detail"><td></td><td colspan="5">이전 목표가 <span class="num">${fmt(x[5])}</span>원 → <span class="num">${fmt(x[4])}</span>원 · ${safeUrl(x[7])?`<a href="${esc(safeUrl(x[7]))}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">${esc(x[1])} 원문 보기 ↗</a>`:"원문 링크가 아직 등록되지 않았어요"}</td></tr>`;
+      <td>${x[3]?`<span class="pill ${x[3]==="매수"?"buy":"hold"}">${x[3]}</span>`:`<span style="color:var(--muted)">—</span>`}</td><td class="r num">${fmt(x[4])}${chip}</td><td class="r num ${cls(up)}">${sign(up)}</td></tr>`;
+    if(openRow===i) h+=`<tr class="detail"><td></td><td colspan="5">${x[5]!=null?`이전 목표가 <span class="num">${fmt(x[5])}</span>원 → <span class="num">${fmt(x[4])}</span>원`:`목표가 <span class="num">${fmt(x[4])}</span>원 (이전 목표가는 기사에 없음)`} · ${safeUrl(x[7])?`<a href="${esc(safeUrl(x[7]))}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">${esc(x[10]||x[1])} 기사 보기 ↗</a>`:"링크 없음"}</td></tr>`;
     return h;}).join("");
 }
 function renderTpChart(){
-  if(!R[cur].reports.length){$("tpChart").innerHTML=`<p style="color:var(--muted)">등록된 리포트가 없어요. config/reports.json 에 헤드라인을 추가하면 증권사별 목표주가가 여기에 그려져요.</p>`;return;}
+  if(!R[cur].reports.length){$("tpChart").innerHTML=`<p style="color:var(--muted)">최근 30일 동안 찾은 목표주가 기사가 없어요.</p>`;return;}
   const rows=R[cur].reports, price=S[cur].price, st=rstats(cur), W=520,rowH=30,top=8,left=104,right=64,H=top+rows.length*rowH+24;
   const all=rows.map(r=>r[4]).concat(price);
   const lo=Math.floor(Math.min(...all)*0.9/10000)*10000, hi=Math.ceil(Math.max(...all)*1.03/10000)*10000;
@@ -607,11 +651,11 @@ function renderTpChart(){
 }
 function renderReports(){
   const d=R[cur], st=rstats(cur); openRow=null;
-  $("rcount").textContent=`등록된 헤드라인 ${d.reports.length}건`;
+  $("rcount").textContent=`최근 30일 뉴스 헤드라인 기준 · ${d.reports.length}곳`;
   $("rkpis").innerHTML=`<div class="kpi"><div class="l">평균 목표주가</div><div class="v num">${fmt(st.avg)}</div></div>
     <div class="kpi"><div class="l">상승여력</div><div class="v num ${cls(st.up)}">${sign(st.up)}</div></div>
-    <div class="kpi"><div class="l">2주간 목표가 변화</div><div class="v num ${cls(st.rev)}">${sign(st.rev)}</div></div>
-    <div class="kpi"><div class="l">투자의견 (매수 ${st.buy} · 중립 ${st.hold})</div><div class="dist"><span style="flex:${st.buy};background:var(--up)"></span><span style="flex:${st.hold};background:var(--flat)"></span></div></div>`;
+    <div class="kpi"><div class="l">목표가 상향 · 하향</div><div class="v num"><span class="up">${st.ups}</span> · <span class="down">${st.downs}</span></div></div>
+    <div class="kpi"><div class="l">목표가 범위</div><div class="v num" style="font-size:16px">${st.lo!=null?fmt(st.lo)+" – "+fmt(st.hi):"—"}</div></div>`;
   const sg=signalsFor(cur);
   $("sigcount").textContent=`${sg.length}개`;
   $("mysig").innerHTML=sg.length?sg.map(x=>`<div class="it"><span class="type ${TYPES[x.k][1]}">${TYPES[x.k][0]}</span><div><p><b>${esc(x.head)}</b></p><small>${esc(x.body)}</small><p style="margin-top:4px;font-size:13px">${esc(x.why)}</p></div></div>`).join("")
@@ -620,7 +664,7 @@ function renderReports(){
   const F=S[cur].fin;
   $("est").innerHTML=!F?`<tbody><tr><td>재무 데이터가 아직 없어요. DART 키를 설정하면 채워져요.</td></tr></tbody>`:`<thead><tr><th></th>${F.years.map(y=>`<th class="r">${y}</th>`).join("")}<th class="r">YoY</th></tr></thead><tbody>`+
     [["매출액","rev"],["영업이익","op"],["순이익","ni"],["자본총계","eq"]].map(([l,k])=>{const v=F[k]||[],y=v[1]&&v[2]!=null&&v[1]>0?(v[2]/v[1]-1)*100:null;return `<tr><td>${l}</td>${v.map((x,i)=>`<td class="r num">${i===2?"<b>"+fmt(x)+"</b>":fmt(x)}</td>`).join("")}<td class="r num ${cls(y)}">${sign(y)}</td></tr>`}).join("")+"</tbody>";
-  $("news").innerHTML=d.news.length?d.news.map(n=>`<div><span class="when num">${esc(n[0])}</span><span>${safeUrl(n[3])?`<a href="${esc(safeUrl(n[3]))}" target="_blank" rel="noopener" style="color:inherit"><b>${esc(n[1])}</b></a>`:`<b>${esc(n[1])}</b>`}<p>${esc(n[2])}</p></span></div>`).join(""):`<p style="color:var(--muted)">뉴스가 아직 없어요. 네이버 검색 API 키를 설정하면 채워져요.</p>`;
+  $("news").innerHTML=d.news.length?d.news.map(n=>`<div><span class="when num">${esc(n[0])}</span><span>${safeUrl(n[3])?`<a href="${esc(safeUrl(n[3]))}" target="_blank" rel="noopener" style="color:inherit"><b>${esc(n[1])}</b></a>`:`<b>${esc(n[1])}</b>`}<p>${esc(n[2])}</p></span></div>`).join(""):`<p style="color:var(--muted)">최근 뉴스를 찾지 못했어요.</p>`;
   resetChat();
 }
 function reportContext(){
@@ -649,13 +693,15 @@ function find(q){q=q.trim().toLowerCase().replace(/\s/g,"");if(!q)return null;
   return null;}
 function buildNav(){
   const ent=META.order.filter(c=>S[c]).map(c=>[c,S[c]]);
-  $("names").innerHTML=ent.map(([c,s])=>`<option value="${esc(s.name)}">${c}</option>`).join("");
-  $("quick").innerHTML=ent.map(([c,s])=>`<button class="qk" type="button" data-c="${c}">${esc(s.name)}</button>`).join("");
+  $("names").innerHTML=ent.map(([c,s])=>`<option value="${esc(s.name)}">${c} · ${esc(s.sector)}</option>`).join("");
+  const fe=(META.featured.length?META.featured:META.order).filter(c=>S[c]).slice(0,10);
+  $("quick").innerHTML=fe.map(c=>`<button class="qk" type="button" data-c="${c}">${esc(S[c].name)}</button>`).join("")+
+    `<button class="qk" type="button" data-all="1">전체 ${ent.length}종목 보기 →</button>`;
 }
 $("search").addEventListener("submit",e=>{e.preventDefault();const c=find($("q").value);
-  if(!c){$("err").hidden=false;$("err").textContent=`"${$("q").value}"를 찾지 못했어요. 지금 등록된 종목은 ${Object.values(S).map(s=>s.name).join(", ")}이에요.`;return;}
+  if(!c){$("err").hidden=false;$("err").textContent=`"${$("q").value}"를 찾지 못했어요. 지금은 대형주 ${Object.keys(S).length}종목을 다뤄요. '괴리율 보드'에서 전체 목록을 볼 수 있어요.`;return;}
   $("err").hidden=true;cur=c;$("q").value="";setView("stock");});
-$("quick").addEventListener("click",e=>{const b=e.target.closest(".qk");if(b){cur=b.dataset.c;setView("stock");}});
+$("quick").addEventListener("click",e=>{const b=e.target.closest(".qk");if(!b)return;if(b.dataset.all){setView("board");return;}cur=b.dataset.c;setView("stock");});
 document.querySelector(".views").addEventListener("click",e=>{const b=e.target.closest(".vw");if(b)setView(b.dataset.v);});
 $("toggles").addEventListener("click",e=>{const b=e.target.closest(".tg");if(!b)return;show[b.dataset.k]=!show[b.dataset.k];b.setAttribute("aria-pressed",show[b.dataset.k]);renderChart(lastBars,lastA);});
 $("ranges").addEventListener("click",e=>{const b=e.target.closest(".rg");if(!b)return;range=+b.dataset.n;
@@ -717,6 +763,8 @@ async function ask(q){
 $("ask").addEventListener("submit",e=>{e.preventDefault();const v=$("askIn").value;$("askIn").value="";ask(v);});
 $("sugs").addEventListener("click",e=>{if(e.target.classList.contains("sug"))ask(e.target.textContent);});
 $("rows").addEventListener("click",e=>{const tr=e.target.closest("tr[data-i]");if(!tr)return;const i=+tr.dataset.i;openRow=openRow===i?null:i;renderRows();});
+$("uni").addEventListener("click",e=>{const sb=e.target.closest(".sortb");if(sb){const k=sb.dataset.k;uniSort=uniSort.k===k?{k,asc:!uniSort.asc}:{k,asc:true};renderUniverse();return;}
+  const tr=e.target.closest("tr[data-c]");if(tr){cur=tr.dataset.c;setView("stock");window.scrollTo({top:0,behavior:"smooth"});}});
 $("sboard").addEventListener("click",e=>{const b=e.target.closest(".sig");if(b){cur=b.dataset.c;setView("stock");window.scrollTo({top:0,behavior:"smooth"});}});
 $("filters").addEventListener("click",e=>{const b=e.target.closest(".f");if(b){sfilter=b.dataset.k;renderSignalsBoard();}});
 
