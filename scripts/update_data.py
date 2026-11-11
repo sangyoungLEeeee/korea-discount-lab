@@ -231,6 +231,21 @@ def fetch_common_shares(corp_code, key):
     return None
 
 
+def fetch_dps(corp_code, key):
+    """최근 사업보고서의 보통주 주당 현금배당금(원). 배당이 없으면 0."""
+    this_year = datetime.now(KST).year
+    for y in (this_year - 1, this_year - 2):
+        js = http_get(f"{DART}/alotMatter.json", {
+            "crtfc_key": key, "corp_code": corp_code, "bsns_year": str(y), "reprt_code": "11011"})
+        if js.get("status") != "000":
+            continue
+        for x in js.get("list", []):
+            if "주당 현금배당금" in (x.get("se") or "") and "보통" in (x.get("stock_knd") or ""):
+                return num(x.get("thstrm")) or 0.0
+        return 0.0
+    return None
+
+
 # ---------------------------------------------------------------- 뉴스 (네이버 검색 API)
 def fetch_news(name, cid, secret):
     js = http_get(NAVER_NEWS, {"query": f"{name} 주가", "display": 5, "sort": "date"},
@@ -447,6 +462,14 @@ def main():
     def kr_div_of(code, fallback):
         if sample:
             return fallback
+        if code in corp:  # DART 주당배당금 ÷ 종가
+            try:
+                dps = fetch_dps(corp[code], key_dart)
+                p = price_of(code)
+                if dps is not None and p and p["bars"]:
+                    return round(dps / p["bars"][-1]["c"] * 100, 2)
+            except Exception as e:
+                log(f"{code} 배당 실패: {e}")
         for suf in (".KS", ".KQ"):
             try:
                 d = fetch_metrics_yahoo(code + suf).get("div")
