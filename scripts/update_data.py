@@ -143,6 +143,32 @@ def fetch_prices_yahoo(code, days=400):
     raise RuntimeError(f"Yahoo에서 {code}를 찾지 못했어요")
 
 
+def fetch_metrics_yahoo(ticker):
+    """해외 피어·배당용: Yahoo의 지난 12개월(trailing) 기준 PER, PBR, ROE(%), 배당수익률(%)."""
+    import yfinance as yf
+    info = yf.Ticker(ticker).info or {}
+    def f(k):
+        v = info.get(k)
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return None
+        return None if math.isnan(v) else v
+    price = f("currentPrice") or f("regularMarketPrice") or f("previousClose")
+    per, pbr, roe, rate = f("trailingPE"), f("priceToBook"), f("returnOnEquity"), f("dividendRate")
+    div = round(rate / price * 100, 2) if rate and price else (0.0 if price else None)
+    return {
+        "per": round(per, 1) if per else None,  # 음수면 화면에 "적자"로 표시
+        "pbr": round(pbr, 2) if pbr and pbr > 0 else None,
+        "roe": round(roe * 100, 1) if roe is not None else None,
+        "div": div,
+    }
+
+
+def yahoo_ticker(country, ticker):
+    return f"{ticker}.T" if country == "JP" else ticker
+
+
 # ---------------------------------------------------------------- 재무 (OpenDART)
 def dart_corp_codes(key):
     raw = http_get(f"{DART}/corpCode.xml", {"crtfc_key": key}, raw=True)
@@ -389,6 +415,38 @@ def main():
                 cache[code] = None
         return cache[code]
 
+    peer_cache, peer_auto = {}, {"n": 0}
+
+    def peer_of(pc):
+        """해외 피어 수치를 Yahoo에서 자동으로 받고, 실패한 항목만 설정 파일 값을 씀."""
+        if sample:
+            return pc
+        t = yahoo_ticker(pc.get("country"), pc.get("ticker"))
+        if t not in peer_cache:
+            try:
+                peer_cache[t] = fetch_metrics_yahoo(t)
+                time.sleep(0.5)
+            except Exception as e:
+                log(f"피어 {t} 실패: {e}")
+                peer_cache[t] = None
+        m = peer_cache[t]
+        if not m:
+            return pc
+        peer_auto["n"] += 1
+        return dict(pc, **{k: m[k] for k in ("per", "pbr", "roe", "div")})  # 받은 값만 사용(없으면 "—")
+
+    def kr_div_of(code, fallback):
+        if sample:
+            return fallback
+        for suf in (".KS", ".KQ"):
+            try:
+                d = fetch_metrics_yahoo(code + suf).get("div")
+                if d is not None:
+                    return d
+            except Exception:
+                pass
+        return fallback
+
     out = {"updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"), "sample": sample, "price_source": source,
            "peers_as_of": stocks_cfg.get("peers_as_of"), "stocks": {}}
     for s in stocks_cfg["stocks"]:
@@ -418,8 +476,8 @@ def main():
         out["stocks"][code] = {
             "name": s["name"], "alias": s.get("alias", []), "mkt": s.get("mkt", ""), "sector": s.get("sector", ""),
             "bars": p["bars"][-260:], "mcap": p["mcap"], "fin": fin,
-            "me": valuation(p["mcap"], fin, s.get("kr_div")),
-            "peers": s.get("peers", []),
+            "me": valuation(p["mcap"], fin, kr_div_of(code, s.get("kr_div"))),
+            "peers": [peer_of(x) for x in s.get("peers", [])],
             "reports": sorted(reports_cfg["reports"].get(code, []), key=lambda r: r["date"], reverse=True),
             "news": news,
         }
@@ -428,6 +486,8 @@ def main():
     if not out["stocks"]:
         log("받아온 종목이 없어 기존 데이터를 그대로 둡니다. API 키를 확인해 주세요.")
         sys.exit(1)  # 실패로 표시하고 기존 site.json 은 덮어쓰지 않음
+    if peer_auto["n"]:
+        out["peers_as_of"] = f"Yahoo Finance 자동 ({datetime.now(KST).strftime('%Y-%m-%d')})"
     out["order"] = list(out["stocks"].keys())  # 화면에 보여줄 순서 (설정 파일 순서)
     out["board"] = build_board(board_cfg, price_of, sample)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

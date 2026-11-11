@@ -219,7 +219,7 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
           <div class="order"><span>① 추세</span><span>② 위치</span><span>③ 모멘텀</span><span>④ 거래량</span></div>
           <div class="guide" id="guide"></div>
         </section>
-        <section class="panel ai">
+        <section class="panel ai" hidden><!-- AI 기능 꺼둠: 켜려면 hidden 제거 + Vercel에 ANTHROPIC_API_KEY -->
           <div class="ph"><div><div class="eyebrow">AI 선생님</div><h3>신호를 엮어서 읽기</h3></div><button class="btn" id="aiChart" type="button">AI로 해석하기</button></div>
           <p class="aitext" id="aiChartText">지표 하나만 보면 틀리기 쉬워요. 버튼을 누르면 위 신호들이 서로 같은 방향을 가리키는지, 엇갈리는지를 묶어서 설명해 드려요.</p>
         </section>
@@ -235,7 +235,7 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
         <div class="mysig" id="mysig"></div>
       </section>
       <section class="panel ai">
-        <div class="ph"><div><div class="eyebrow">AI 하이라이트</div><h3>최근 리포트 핵심 정리</h3></div><button class="btn" id="genHl" type="button">AI로 다시 요약</button></div>
+        <div class="ph"><div><div class="eyebrow">핵심 정리</div><h3>최근 리포트 핵심 정리</h3></div><button class="btn" id="genHl" type="button" hidden>AI로 다시 요약</button></div>
         <ul class="hl" id="hl"></ul>
       </section>
     </div>
@@ -257,12 +257,12 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
         <div class="tbl"><table style="min-width:360px" id="est"></table></div>
       </section>
     </div>
-    <div class="two">
+    <div style="display:grid;gap:18px">
       <section class="panel">
-        <div class="ph"><h3>관련 뉴스</h3><span class="sub">네이버 뉴스 검색</span></div>
+        <div class="ph"><h3>관련 뉴스</h3><span class="sub">Google 뉴스 · 최근 기사</span></div>
         <div class="news" id="news"></div>
       </section>
-      <section class="panel chat">
+      <section class="panel chat" hidden>
         <div class="ph"><h3>리포트에 물어보기</h3><span class="sub">리포트·차트·괴리율 기반 답변</span></div>
         <div class="log" id="log"></div>
         <div class="sugs" id="sugs"></div>
@@ -731,7 +731,7 @@ fetch("data/site.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error(r.s
   $("banner").textContent=META.sample?"예시 데이터로 보는 중":`데이터 기준 ${META.updated} (KST)`;
   if(META.src==="yahoo")$("srcline").textContent="시세: Yahoo Finance(지연 시세, 전 영업일 기준) · 재무: 금융감독원 OpenDART · 뉴스: Google 뉴스";
   else if(META.src==="data.go.kr")$("srcline").textContent="시세: 금융위원회 주식시세정보(공공데이터포털, 전 영업일 기준) · 재무: 금융감독원 OpenDART · 뉴스: 네이버 검색";
-  $("peerAsOf").textContent="해외 피어: "+(META.peersAsOf||"직접 입력");
+  $("peerAsOf").textContent="해외 피어: "+(META.peersAsOf||"직접 입력")+" · 지난 12개월 실적 기준";
   buildNav();setView("stock");
 }).catch(e=>{$("banner").textContent="데이터를 불러오지 못했어요";$("err").hidden=false;$("err").textContent="data/site.json 파일을 찾지 못했어요. 설명서 5단계(데이터 첫 수집)를 먼저 실행해 주세요.";});
 
