@@ -5,15 +5,15 @@
 ## 이 사이트가 돌아가는 방식
 
 ```
-[공공데이터포털 시세] ─┐
+[Yahoo 시세(키 없음)] ─┐
 [OpenDART 재무]      ─┼─▶ GitHub Actions (매일 자동 실행) ─▶ data/site.json ─▶ Vercel (사이트 공개)
-[네이버 뉴스]        ─┘                                                         │
+[Google 뉴스(키 없음)]─┘                                                         │
                                                                     AI 버튼 ─▶ /api/ask ─▶ Claude API
 ```
 
 - **GitHub**: 코드와 데이터를 보관하는 곳. 매일 데이터를 받아오는 로봇(Actions)도 여기서 돌아요.
 - **Vercel**: GitHub에 있는 파일을 인터넷 사이트로 만들어 주는 곳. 무료 요금제로 충분해요.
-- API 키를 하나도 넣지 않아도 사이트는 **예시 데이터**로 돌아가요. 키를 하나씩 넣을 때마다 실제 데이터로 바뀌어요.
+- 키가 하나도 없어도 **주가(Yahoo Finance)와 뉴스(Google 뉴스)는 실제 데이터**로 돌아가요. 재무(PER·PBR·ROE)는 OpenDART 키가 있어야 채워져요.
 
 ## 폴더 구성
 
@@ -45,11 +45,11 @@
 
 | 키 이름 | 어디서 | 무엇에 쓰나 | 필수? |
 |---|---|---|---|
-| `DATA_GO_KR_KEY` | [공공데이터포털](https://www.data.go.kr) → "금융위원회_주식시세정보" 검색 → **활용신청** → 마이페이지에서 **일반 인증키(Decoding)** 복사 | 주가, 시가총액 | 실제 데이터를 쓰려면 필수 |
-| `DART_API_KEY` | [OpenDART](https://opendart.fss.or.kr) → 인증키 신청 → 이메일 인증 | 매출·이익·자본 → PER, PBR, ROE | 권장 |
-| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | [네이버 개발자센터](https://developers.naver.com) → Application 등록 → 사용 API에서 **검색** 선택 | 관련 뉴스 | 선택 |
+| `DART_API_KEY` | [OpenDART](https://opendart.fss.or.kr) → 인증키 신청 → 이메일 인증 | 매출·이익·자본 → PER, PBR, ROE | **권장 (이것 하나만 있으면 충분)** |
+| `DATA_GO_KR_KEY` | [공공데이터포털](https://www.data.go.kr) → "금융위원회_주식시세정보" → 활용신청 → **일반 인증키(Decoding)** | 주가 (넣으면 Yahoo 대신 사용) | 선택 · 한국 본인인증 필요 |
+| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | [네이버 개발자센터](https://developers.naver.com) → Application 등록 → 사용 API에서 **검색** 선택 | 뉴스 (넣으면 Google 대신 사용) | 선택 · 네이버 계정 필요 |
 
-공공데이터포털 키는 승인 후 실제로 작동하기까지 1~2시간 걸릴 수 있어요.
+해외에 있어서 한국 본인인증이 어렵다면 **OpenDART 키만** 받으면 돼요. 공공데이터포털·네이버 키는 나중에 넣으면 자동으로 그쪽으로 바뀌어요.
 
 ## 3단계. GitHub에 키 저장하기
 
@@ -115,8 +115,8 @@
 
 | 증상 | 해결 |
 |---|---|
-| 사이트 상단에 "예시 데이터로 보는 중" | 3단계 `DATA_GO_KR_KEY` 를 확인하고 5단계를 다시 실행 |
-| Actions가 빨간 X, 로그에 "받아온 종목이 없어" | 공공데이터포털 키가 아직 승인 전이거나, Encoding 키를 넣은 경우 → **Decoding 키**로 바꾸기 |
+| 사이트 상단에 "예시 데이터로 보는 중" | 아직 첫 실제 수집 전이에요. 5단계 **Run workflow** 실행 |
+| Actions가 빨간 X, 로그에 "받아온 종목이 없어" | Yahoo 접속이 일시적으로 막힌 경우가 많아요. 잠시 후 다시 실행하고, 계속되면 로그를 Claude에게 보여주세요. 공공데이터포털 키를 넣었다면 **Decoding 키**인지 확인 |
 | Actions 로그에 `push` 오류 | 4단계 권한 설정 확인 |
 | 재무 표가 "아직 없어요" | `DART_API_KEY` 확인 |
 | AI 버튼이 "설정되지 않았어요" | Vercel → 프로젝트 → Settings → Environment Variables 에 `ANTHROPIC_API_KEY` 추가 후 **Redeploy** |

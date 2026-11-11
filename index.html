@@ -319,14 +319,14 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
     </section>
   </div>
 
-  <footer>시세: 금융위원회 주식시세정보(공공데이터포털, 전 영업일 기준) · 재무: 금융감독원 OpenDART · 뉴스: 네이버 검색 API · 해외 피어 지표와 증권사 헤드라인은 운영자가 공개 자료를 보고 직접 입력합니다. '예시' 표시가 있는 값은 실제 데이터가 아닙니다. 이 사이트의 정보는 투자 권유가 아니며, 투자 판단과 그 결과의 책임은 투자자 본인에게 있습니다.</footer>
+  <footer><span id="srcline">시세: Yahoo Finance 또는 금융위원회 주식시세정보 · 재무: 금융감독원 OpenDART · 뉴스: Google 뉴스 또는 네이버 검색</span> · 해외 피어 지표와 증권사 헤드라인은 운영자가 공개 자료를 보고 직접 입력합니다. '예시' 표시가 있는 값은 실제 데이터가 아닙니다. 이 사이트의 정보는 투자 권유가 아니며, 투자 판단과 그 결과의 책임은 투자자 본인에게 있습니다.</footer>
 </div>
 
 <script>
 // ---------- data (data/site.json 에서 불러옴) ----------
 let S={}, R={}, BOARD={}, META={};
 function adapt(js){
-  META={updated:js.updated_at,sample:js.sample,peersAsOf:js.peers_as_of,order:js.order||Object.keys(js.stocks)};
+  META={updated:js.updated_at,sample:js.sample,peersAsOf:js.peers_as_of,order:js.order||Object.keys(js.stocks),src:js.price_source};
   for(const [c,s] of Object.entries(js.stocks)){
     const last=s.bars[s.bars.length-1];
     S[c]={name:s.name,alias:(s.alias||[]).map(a=>a.toLowerCase()),mkt:s.mkt,sector:s.sector,price:last.c,mcap:s.mcap,fin:s.fin,
@@ -727,7 +727,9 @@ new MutationObserver(redraw).observe(document.documentElement,{attributes:true,a
 fetch("data/site.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error(r.status);return r.json();}).then(js=>{
   adapt(js);
   if(!S[cur])cur=Object.keys(S)[0];
-  $("banner").textContent=META.sample?"예시 데이터로 보는 중 · API 키를 설정하면 실제 데이터로 바뀝니다":`데이터 기준 ${META.updated} (KST)`;
+  $("banner").textContent=META.sample?"예시 데이터로 보는 중":`데이터 기준 ${META.updated} (KST)`;
+  if(META.src==="yahoo")$("srcline").textContent="시세: Yahoo Finance(지연 시세, 전 영업일 기준) · 재무: 금융감독원 OpenDART · 뉴스: Google 뉴스";
+  else if(META.src==="data.go.kr")$("srcline").textContent="시세: 금융위원회 주식시세정보(공공데이터포털, 전 영업일 기준) · 재무: 금융감독원 OpenDART · 뉴스: 네이버 검색";
   $("peerAsOf").textContent="해외 피어: "+(META.peersAsOf||"직접 입력");
   buildNav();setView("stock");
 }).catch(e=>{$("banner").textContent="데이터를 불러오지 못했어요";$("err").hidden=false;$("err").textContent="data/site.json 파일을 찾지 못했어요. 설명서 5단계(데이터 첫 수집)를 먼저 실행해 주세요.";});

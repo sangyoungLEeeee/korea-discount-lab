@@ -3,14 +3,15 @@
 
 매일 GitHub Actions가 이 파일을 실행해서 data/site.json 을 새로 만듭니다.
 사용하는 무료 데이터:
-  - 공공데이터포털 금융위원회_주식시세정보 (환경변수 DATA_GO_KR_KEY)
-  - OpenDART 재무제표 (환경변수 DART_API_KEY)
-  - 네이버 검색 API 뉴스 (환경변수 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET) — 없어도 됩니다
+  - 주가: 공공데이터포털 금융위원회_주식시세정보 (환경변수 DATA_GO_KR_KEY가 있을 때)
+          없으면 Yahoo Finance (키·가입 필요 없음, yfinance 패키지 사용)
+  - 재무: OpenDART (환경변수 DART_API_KEY) — 없으면 재무 표가 비어 있음
+  - 뉴스: 네이버 검색 API (NAVER_CLIENT_ID, NAVER_CLIENT_SECRET가 있을 때)
+          없으면 Google 뉴스 RSS (키 필요 없음)
 
-키가 하나도 없으면 예시 데이터로 사이트가 돌아가게 만듭니다.
-직접 실행:  python scripts/update_data.py            (키가 있으면 실제 데이터)
+직접 실행:  python scripts/update_data.py            (실제 데이터)
            python scripts/update_data.py --sample   (항상 예시 데이터)
-외부 패키지 없이 파이썬 기본 기능만 사용합니다.
+Yahoo 주가를 쓰려면 yfinance 패키지가 필요합니다:  pip install yfinance
 """
 import io
 import json
@@ -34,6 +35,7 @@ KST = timezone(timedelta(hours=9))
 PRICE_URL = "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo"
 DART = "https://opendart.fss.or.kr/api"
 NAVER_NEWS = "https://openapi.naver.com/v1/search/news.json"
+GOOGLE_NEWS = "https://news.google.com/rss/search"
 
 
 def log(*a):
@@ -112,6 +114,35 @@ def fetch_prices(code, key, days=400):
     return {"bars": bars, "name": name, "mcap": mcap}
 
 
+# ---------------------------------------------------------------- 시세 (Yahoo Finance, 키 없음)
+def fetch_prices_yahoo(code, days=400):
+    """KOSPI는 .KS, KOSDAQ은 .KQ 로 찾아봅니다. 시가총액은 상장주식수 × 종가."""
+    import yfinance as yf  # GitHub Actions에서 설치됨
+    for suffix in (".KS", ".KQ"):
+        t = yf.Ticker(code + suffix)
+        df = t.history(period=f"{days}d", interval="1d", auto_adjust=False)
+        if df is None or df.empty:
+            continue
+        bars = []
+        for idx, r in df.iterrows():
+            c = float(r["Close"])
+            if not c or math.isnan(c):
+                continue
+            o, h, l = (float(r[k]) if r[k] and not math.isnan(r[k]) else c for k in ("Open", "High", "Low"))
+            v = float(r["Volume"]) if not math.isnan(r["Volume"]) else 0
+            bars.append({"t": idx.strftime("%Y-%m-%d"), "o": round(o), "h": round(max(h, o, c)), "l": round(min(l, o, c)), "c": round(c), "v": round(v)})
+        if not bars:
+            continue
+        shares = None
+        try:
+            shares = t.fast_info["shares"]
+        except Exception:
+            pass
+        mcap = shares * bars[-1]["c"] if shares else None
+        return {"bars": bars, "name": code, "mcap": mcap}  # Yahoo는 한글 이름이 없어서 설정 파일 이름을 씀
+    raise RuntimeError(f"Yahoo에서 {code}를 찾지 못했어요")
+
+
 # ---------------------------------------------------------------- 재무 (OpenDART)
 def dart_corp_codes(key):
     raw = http_get(f"{DART}/corpCode.xml", {"crtfc_key": key}, raw=True)
@@ -165,6 +196,23 @@ def fetch_news(name, cid, secret):
     return out
 
 
+def fetch_news_google(name):
+    """Google 뉴스 RSS — 키 없이 제목·출처·링크만 가져옵니다."""
+    raw = http_get(GOOGLE_NEWS, {"q": f"{name} 주가", "hl": "ko", "gl": "KR", "ceid": "KR:ko"}, raw=True)
+    out = []
+    for it in list(ET.fromstring(raw).iter("item"))[:5]:
+        title = it.findtext("title") or ""
+        src = it.findtext("source") or ""
+        if src and title.endswith(" - " + src):
+            title = title[: -len(" - " + src)]
+        try:
+            d = datetime.strptime(it.findtext("pubDate"), "%a, %d %b %Y %H:%M:%S %Z").strftime("%m.%d")
+        except Exception:
+            d = ""
+        out.append({"date": d, "title": title, "summary": src, "url": it.findtext("link") or ""})
+    return out
+
+
 # ---------------------------------------------------------------- 계산
 def valuation(mcap_won, fin, kr_div):
     if not mcap_won or not fin:
@@ -191,7 +239,7 @@ def build_board(board, price_of, sample):
         gap, avg = gaps[-1] * 100, sum(gaps) / len(gaps) * 100
         if sample:  # 예시 시세는 두 종목이 따로 움직여서 평균이 의미 없음 → 그럴듯한 값으로 대체
             avg = gap + (int(p["pref"]) % 7) - 3
-        pref.append({"common": c["name"], "pref": q["name"], "cp": c["bars"][-1]["c"], "pp": q["bars"][-1]["c"],
+        pref.append({"common": p.get("common_name") or c["name"], "pref": p.get("pref_name") or q["name"], "cp": c["bars"][-1]["c"], "pp": q["bars"][-1]["c"],
                      "gap": round(gap, 1), "gap_avg": round(avg, 1)})
     nav = []
     for h in board["holdcos"]:
@@ -281,16 +329,22 @@ def main():
     stocks_cfg, reports_cfg, board_cfg = load("stocks.json"), load("reports.json"), load("board.json")
     key_price, key_dart = os.getenv("DATA_GO_KR_KEY"), os.getenv("DART_API_KEY")
     nid, nsec = os.getenv("NAVER_CLIENT_ID"), os.getenv("NAVER_CLIENT_SECRET")
-    sample = force_sample or not key_price
-    if sample:
-        log("시세 키가 없거나 --sample 이라서 예시 데이터로 만듭니다.")
+    sample = force_sample
+    source = "sample" if sample else ("data.go.kr" if key_price else "yahoo")
+    log(f"주가 출처: {source}")
 
     cache = {}
 
     def price_of(code):
         if code not in cache:
             try:
-                cache[code] = sample_price_of(code) if sample else fetch_prices(code, key_price)
+                if sample:
+                    cache[code] = sample_price_of(code)
+                elif key_price:
+                    cache[code] = fetch_prices(code, key_price)
+                else:
+                    cache[code] = fetch_prices_yahoo(code)
+                    time.sleep(0.5)  # Yahoo에 너무 빠르게 요청하지 않도록
             except Exception as e:
                 log(f"{code} 시세 실패: {e}")
                 cache[code] = None
@@ -303,7 +357,7 @@ def main():
         except Exception as e:
             log("DART 회사코드 실패:", e)
 
-    out = {"updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"), "sample": sample,
+    out = {"updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"), "sample": sample, "price_source": source,
            "peers_as_of": stocks_cfg.get("peers_as_of"), "stocks": {}}
     for s in stocks_cfg["stocks"]:
         code = s["code"]
@@ -324,9 +378,9 @@ def main():
         news = []
         if sample:
             news = [{"date": n[0], "title": n[1], "summary": n[2], "url": ""} for n in SAMPLE_NEWS.get(code, [])]
-        elif nid and nsec:
+        else:
             try:
-                news = fetch_news(s["name"], nid, nsec)
+                news = fetch_news(s["name"], nid, nsec) if nid and nsec else fetch_news_google(s["name"])
             except Exception as e:
                 log(f"{s['name']} 뉴스 실패: {e}")
         out["stocks"][code] = {
