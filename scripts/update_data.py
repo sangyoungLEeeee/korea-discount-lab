@@ -199,6 +199,10 @@ def norm_name(n):
     n = (n or "").lower()
     for t in ("주식회사", "(주)", "㈜", "(株)", " "):
         n = n.replace(t, "")
+    # 출자현황에는 'LG전자'를 '엘지전자'처럼 한글로 적는 경우가 있어 영문 약칭으로 맞춤
+    for k, v in (("엘지", "lg"), ("에스케이", "sk"), ("씨제이", "cj"), ("케이티", "kt"), ("지에스", "gs"),
+                 ("에이치디", "hd"), ("에이치엘", "hl"), ("엘에스", "ls"), ("디비", "db"), ("비지에프", "bgf")):
+        n = n.replace(k, v)
     return n
 
 
@@ -222,8 +226,45 @@ def fetch_financials(corp_code, key):
             if row:
                 vals = [num(row.get("bfefrmtrm_amount")), num(row.get("frmtrm_amount")), num(row.get("thstrm_amount"))]
             res[k] = [round(v / 1e8) if v is not None else None for v in vals]  # 원 → 억원
+        res["basis"] = "연결 전체"
+        # PER·PBR·ROE는 지배주주 기준이 표준이라, 전체 재무제표에서 지배기업 소유주 몫을 찾아 바꿈
+        try:
+            owners = fetch_owner_parts(corp_code, key, y)
+            if owners.get("ni") or owners.get("eq"):
+                res["ni_total"], res["eq_total"] = res["ni"], res["eq"]
+                for k in ("ni", "eq"):
+                    if owners.get(k):
+                        res[k] = owners[k]
+                res["basis"] = "지배주주"
+        except Exception as e:
+            log(f"지배주주 재무 실패({corp_code}): {e}")
         return res
     return None
+
+
+OWNER_IDS = {"ni": ("ifrs-full_ProfitLossAttributableToOwnersOfParent",),
+             "eq": ("ifrs-full_EquityAttributableToOwnersOfParent",)}
+OWNER_NAMES = {"ni": ("지배기업의 소유주에게 귀속되는 당기순이익", "지배기업 소유주지분", "지배기업소유주지분"),
+               "eq": ("지배기업의 소유주에게 귀속되는 자본", "지배기업 소유주지분", "지배기업소유주지분")}
+
+
+def fetch_owner_parts(corp_code, key, year):
+    """연결 전체 재무제표에서 지배주주 순이익·자본 3개년(억원)."""
+    js = http_get(f"{DART}/fnlttSinglAcntAll.json", {"crtfc_key": key, "corp_code": corp_code, "bsns_year": str(year),
+                                                     "reprt_code": "11011", "fs_div": "CFS"})
+    if js.get("status") != "000":
+        return {}
+    out = {}
+    for k in ("ni", "eq"):
+        want_sj = ("IS", "CIS") if k == "ni" else ("BS",)
+        rows = [x for x in js.get("list", []) if x.get("sj_div") in want_sj]
+        row = next((x for x in rows if x.get("account_id") in OWNER_IDS[k]), None)
+        if not row:
+            row = next((x for x in rows if (x.get("account_nm") or "").replace(" ", "") in [n.replace(" ", "") for n in OWNER_NAMES[k]]), None)
+        if row:
+            vals = [num(row.get("bfefrmtrm_amount")), num(row.get("frmtrm_amount")), num(row.get("thstrm_amount"))]
+            out[k] = [round(v / 1e8) if v is not None else None for v in vals]
+    return out
 
 
 def fetch_common_shares(corp_code, key):
@@ -326,7 +367,7 @@ def parse_target_headline(title, name, price):
     if len(amts) != 1:  # 금액이 없거나 여러 개(여러 종목 묶음 기사)면 건너뜀
         return None
     tp = parse_won(amts[0])
-    if not price or not (price * 0.3 <= tp <= price * 3):
+    if not price or not (price * 0.5 <= tp <= price * 2):  # 현재가의 0.5~2배 밖이면 오인식으로 보고 버림
         return None
     broker = next((b for b in BROKERS if b in t), None)
     if not broker:
@@ -426,6 +467,9 @@ def build_board(board, price_of, sample, holdings_of=None):
                 val += ch["mcap"] * x["pct"] / 100
         if sample and val:  # 예시 모드에서는 할인율이 그럴듯하게 나오도록 시가총액을 만듦
             me = dict(me, mcap=val * (0.35 + (int(h["code"]) % 20) / 100))
+        if val and val < me["mcap"] * 0.5 and h.get("holdings"):  # 자동 지분율이 너무 작게 잡히면(이름 매칭 실패) 예비 값 사용
+            holdings, src, h = h["holdings"], None, dict(h, example=True)
+            val = sum(ch["mcap"] * x["pct"] / 100 for x in holdings for ch in [price_of(x["code"])] if ch and ch["mcap"])
         if val:
             nav.append({"name": h["name"], "nav": round(val / 1e12, 1), "mcap": round(me["mcap"] / 1e12, 1),
                         "disc": round((1 - me["mcap"] / val) * 100, 1), "example": bool(h.get("example")),

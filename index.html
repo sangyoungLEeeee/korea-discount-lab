@@ -304,7 +304,7 @@ form.ask input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
       <p class="note" id="uniNote"></p>
     </section>
     <section class="panel">
-      <div class="ph"><div><div class="eyebrow">한국 vs 일본</div><h3>밸류업은 어디까지 왔나</h3></div><span class="sub">PBR 1배 미만 기업 비중</span></div>
+      <div class="ph"><div><div class="eyebrow">한국 vs 일본</div><h3>밸류업은 어디까지 왔나</h3></div><span class="sub">거래소·언론 집계</span></div>
       <div class="tbl"><table id="jpkr"></table></div>
       <p class="note">일본은 2023년 3월 도쿄증권거래소가 PBR 1배 미만 기업에 자본효율 개선 계획을 요구했고, 한국은 2024년 기업가치 제고(밸류업) 프로그램을 시작했어요. 두 시장의 같은 지표를 나란히 놓으면 한국이 일본의 경로를 따라가고 있는지 확인할 수 있어요.</p>
     </section>
@@ -525,11 +525,14 @@ function fairGap(pbr,roe,country){if(pbr==null||roe==null||roe<3)return null;con
 function valGaps(st){
   const avg=k=>{const v=st.peers.map(p=>p[k]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const g=(x,y)=>x!=null&&y?(x/y-1)*100:null;
-  const pf=st.peers.map(p=>fairGap(p[4],p[5],p[0])).filter(x=>x!=null), peerFair=pf.length?pf.reduce((a,b)=>a+b,0)/pf.length:null;
+  // 피어는 중앙값 사용(자본이 아주 작은 회사 한 곳이 평균을 크게 끌어올리는 것을 막음)
+  const pf=st.peers.map(p=>fairGap(p[4],p[5],p[0])).filter(x=>x!=null).sort((a,b)=>a-b);
+  const peerFair=pf.length?(pf.length%2?pf[(pf.length-1)/2]:(pf[pf.length/2-1]+pf[pf.length/2])/2):null;
   const fair=fairGap(st.me[1],st.me[2],"KR");
   const divs=st.peers.map(p=>p[6]).filter(x=>x!=null);
   return {per:st.me[0]>0&&st.me[0]<=200?g(st.me[0],avg(3)):null,pbr:g(st.me[1],avg(4)),fair,peerFair,
-    rel:fair!=null&&peerFair!=null?fair-peerFair:null,
+    // 피어 대비 상대 할인율(%): (실제/적정)의 비율을 피어와 비교. -100% 아래로 내려가지 않음
+    rel:fair!=null&&peerFair!=null?((1+fair/100)/(1+peerFair/100)-1)*100:null,
     div:st.me[3]!=null&&divs.length?st.me[3]-divs.reduce((a,b)=>a+b,0)/divs.length:null};
 }
 function renderValuation(st){
@@ -537,7 +540,7 @@ function renderValuation(st){
   const rows=[["KR",st.name,cur,...st.me],...st.peers], G=valGaps(st);
   $("vkpis").innerHTML=`<div class="kpi"><div class="l">PER 괴리율</div><div class="v num ${cls(G.per)}">${sign(G.per)}</div></div>
     <div class="kpi"><div class="l">PBR 괴리율</div><div class="v num ${cls(G.pbr)}">${sign(G.pbr)}</div></div>
-    <div class="kpi"><div class="l">적정 PBR 대비 (피어 평균 ${sign(G.peerFair,0)})</div><div class="v num ${cls(G.fair)}">${sign(G.fair)}</div></div>
+    <div class="kpi"><div class="l">적정 PBR 대비 (피어 중앙값 ${sign(G.peerFair,0)})</div><div class="v num ${cls(G.fair)}">${sign(G.fair)}</div></div>
     <div class="kpi"><div class="l">배당수익률 차이</div><div class="v num">${G.div==null?"—":(G.div>0?"+":"")+G.div.toFixed(1)+"%p"}</div></div>`;
   $("peers").innerHTML=rows.map((p,i)=>`<tr class="${i===0?"me":""}"><td><span class="flag ${p[0]}">${p[0]}</span>${esc(p[1])} <span class="num" style="color:var(--muted);font-weight:400">${esc(p[2])}</span></td>
     <td class="r num">${p[3]!=null&&p[3]<0?"적자":p[3]>200?"이익 미미":fx(p[3],1,"배")}</td><td class="r num">${fx(p[4],2,"배")}</td><td class="r num">${fx(p[5],1,"%")}</td><td class="r num">${fx(p[6],1,"%")}</td><td class="r num ${cls(fairGap(p[4],p[5],p[0]))}">${sign(fairGap(p[4],p[5],p[0]))}</td></tr>`).join("");
@@ -546,8 +549,8 @@ function renderValuation(st){
   $("vnote").innerHTML=`<b>읽는 법</b> · 자기자본 1원으로 ROE만큼 버는 회사라면, 투자자가 요구하는 수익률(자기자본비용)을 기준으로 <b>적정 PBR = ROE ÷ 자기자본비용</b>이에요. 예를 들어 ROE 10%, 자기자본비용 10%면 적정 PBR은 1배예요. 실제 PBR이 이보다 낮을수록 "버는 만큼 평가받지 못한다"는 뜻이에요. `+
     (e==null?`${esc(st.name)}는 ROE가 3% 미만(또는 적자)이거나 재무 데이터가 없어서 이 비교가 의미 있게 계산되지 않아요.`:
     `${esc(st.name)}는 ROE ${fx(st.me[2],1,"%")} 기준 적정 PBR이 ${fx(fairP,2,"배")}인데 실제 PBR은 ${fx(st.me[1],2,"배")}라 <b class="${cls(e)}">${Math.abs(e).toFixed(0)}% ${e<0?"낮게":"높게"}</b> 거래돼요.`+
-     (G.peerFair!=null?` 같은 기준으로 해외 피어는 평균 ${sign(G.peerFair,0)}이라, 차이는 <b class="${cls(G.rel)}">${(G.rel>0?"+":"")+G.rel.toFixed(0)}%p</b>예요${G.rel<=-20?". 수익성을 감안해도 해외보다 덜 평가받는, 전형적인 코리아 디스카운트 사례예요.":G.rel>=20?". 해외 피어보다 기대가 더 많이 반영된 상태예요.":"."}`:""))+
-    ` <span style="color:var(--muted)">가정한 자기자본비용: 한국 ${co.KR}% · 미국 ${co.US}% · 일본 ${co.JP}%. 한국 종목 지표는 DART 최근 사업연도 연결재무와 시가총액, 피어는 Yahoo Finance 지난 12개월 기준이에요.</span>`;
+     (G.peerFair!=null?` 같은 기준으로 해외 피어(중앙값)는 ${sign(G.peerFair,0)}이라, 피어와 비교하면 <b class="${cls(G.rel)}">${Math.abs(G.rel).toFixed(0)}% ${G.rel<0?"할인":"할증"}</b>돼 있어요${G.rel<=-30?". 수익성을 감안해도 해외보다 덜 평가받는, 전형적인 코리아 디스카운트 사례예요.":G.rel>=30?". 해외 피어보다 기대가 더 많이 반영된 상태예요.":"."}`:""))+
+    ` <span style="color:var(--muted)">가정한 자기자본비용: 한국 ${co.KR}% · 미국 ${co.US}% · 일본 ${co.JP}%. 한국 종목 지표는 DART 최근 사업연도 지배주주 순이익·자본과 시가총액, 피어는 Yahoo Finance 지난 12개월 기준이에요.</span>`;
 }
 const exTag=x=>x?` <span class="pill hold" style="font-size:10.5px">예시</span>`:"";
 let uniSort={k:"rel",asc:true};
@@ -555,19 +558,20 @@ function renderUniverse(){
   const rows=Object.entries(S).map(([c,s])=>{const G=valGaps(s);return {c,name:s.name,sector:s.sector,mcap:s.mcap?s.mcap/1e12:null,per:s.me[0],pbr:s.me[1],roe:s.me[2],fair:G.fair,peer:G.peerFair,rel:G.rel};});
   const k=uniSort.k, dir=uniSort.asc?1:-1;
   rows.sort((a,b)=>{const x=a[k],y=b[k];if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return typeof x==="string"?x.localeCompare(y)*dir:(x-y)*dir;});
-  const cols=[["name","종목"],["sector","업종"],["mcap","시가총액(조)"],["per","PER"],["pbr","PBR"],["roe","ROE"],["fair","적정 PBR 대비"],["peer","해외 피어 평균"],["rel","차이(%p)"]];
+  const cols=[["name","종목"],["sector","업종"],["mcap","시가총액(조)"],["per","PER"],["pbr","PBR"],["roe","ROE"],["fair","적정 PBR 대비"],["peer","해외 피어 중앙값"],["rel","피어 대비"]];
   $("uni").innerHTML=`<thead><tr>${cols.map(([key,l],i)=>`<th class="${i>1?"r":""}"><button type="button" class="sortb" data-k="${key}" style="all:unset;cursor:pointer">${l}${uniSort.k===key?(uniSort.asc?" ▲":" ▼"):""}</button></th>`).join("")}</tr></thead><tbody class="click">`+
     rows.map(r=>`<tr data-c="${r.c}"><td><b>${esc(r.name)}</b></td><td style="color:var(--muted)">${esc(r.sector)}</td><td class="r num">${fx(r.mcap,1)}</td>
       <td class="r num">${r.per!=null&&r.per<0?"적자":r.per>200?"이익 미미":fx(r.per,1)}</td><td class="r num">${fx(r.pbr,2)}</td><td class="r num">${fx(r.roe,1,"%")}</td>
-      <td class="r num ${cls(r.fair)}">${sign(r.fair,0)}</td><td class="r num">${sign(r.peer,0)}</td><td class="r num"><b class="${cls(r.rel)}">${r.rel==null?"—":(r.rel>0?"+":"")+r.rel.toFixed(0)}</b></td></tr>`).join("")+"</tbody>";
+      <td class="r num ${cls(r.fair)}">${sign(r.fair,0)}</td><td class="r num">${sign(r.peer,0)}</td><td class="r num"><b class="${cls(r.rel)}">${sign(r.rel,0)}</b></td></tr>`).join("")+"</tbody>";
   $("uniSub").textContent=`${rows.length}종목 · 열 이름을 누르면 정렬`;
-  $("uniNote").innerHTML=`<b>읽는 법</b> · <b>적정 PBR 대비</b>는 실제 PBR이 ROE ÷ 자기자본비용(한국 ${META.coe.KR}%)보다 몇 % 낮은지예요. <b>차이</b>가 크게 음수일수록 해외 동종 기업보다 수익성 대비 더 싸게 거래되는 종목이에요. 행을 누르면 종목 분석으로 이동해요.`;
+  $("uniNote").innerHTML=`<b>읽는 법</b> · <b>적정 PBR 대비</b>는 실제 PBR이 ROE ÷ 자기자본비용(한국 ${META.coe.KR}%)보다 몇 % 낮은지예요. <b>피어 대비</b>는 같은 기준의 해외 동종 기업(중앙값)과 비교한 할인·할증률이에요. 크게 음수일수록 해외보다 수익성 대비 더 싸게 거래되는 종목이에요. PER·PBR·ROE는 지배주주 순이익·자본 기준이에요. 행을 누르면 종목 분석으로 이동해요.`;
 }
 function renderBoard(){
   renderUniverse();
   const j=BOARD.jpkr||{columns:[],rows:[]};
   $("jpkr").innerHTML=`<thead><tr><th>지표${exTag(j.example)}</th>${j.columns.map(x=>`<th class="r">${esc(x)}</th>`).join("")}</tr></thead><tbody>`+
-    j.rows.map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(x=>`<td class="r num">${esc(x)}</td>`).join("")}</tr>`).join("")+"</tbody>";
+    j.rows.map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(x=>`<td class="r num">${esc(x)}</td>`).join("")}</tr>`).join("")+
+    (j.source?`<tr><td colspan="${j.columns.length+1}" style="color:var(--muted);font-size:12px">${esc(j.source)}</td></tr>`:"")+"</tbody>";
   $("pref").innerHTML=`<thead><tr><th>보통주</th><th>우선주</th><th class="r">보통주</th><th class="r">우선주</th><th class="r">괴리율</th><th class="r">1년 평균</th><th></th></tr></thead><tbody>`+
     (BOARD.pref||[]).map(r=>`<tr><td>${esc(r.common)}</td><td>${esc(r.pref)}</td><td class="r num">${fmt(r.cp)}</td><td class="r num">${fmt(r.pp)}</td><td class="r num"><b>${fx(r.gap,1,"%")}</b></td>
       <td class="r num ${r.gap>r.gap_avg+2?"down":r.gap<r.gap_avg-2?"up":""}">${fx(r.gap_avg,1,"%")}</td><td><div class="meter"><b style="width:${Math.max(0,Math.min(100,r.gap/70*100))}%"></b></div></td></tr>`).join("")+"</tbody>";
@@ -575,7 +579,8 @@ function renderBoard(){
     (BOARD.nav||[]).map(r=>`<tr><td>${esc(r.name)}${exTag(r.example)}${r.n?`<div style="color:var(--muted);font-size:11.5px">상장 자회사 ${r.n}곳${r.src?" · "+esc(r.src):""}</div>`:""}</td><td class="r num">${fx(r.nav,1)}</td><td class="r num">${fx(r.mcap,1)}</td><td class="r num"><b>${fx(r.disc,0,"%")}</b></td><td><div class="meter"><b style="width:${Math.max(0,Math.min(100,r.disc))}%"></b></div></td></tr>`).join("")+`<tr><td colspan="5" style="color:var(--muted);font-size:12px">보유지분 가치 = 상장 자회사 지분율(DART 타법인출자현황) × 자회사 시가총액. 비상장 자회사와 순차입금은 반영하지 않아요.</td></tr></tbody>`;
   const vu=BOARD.valueup||{items:[]};
   $("vu").innerHTML=`<thead><tr><th>기업${exTag(vu.example)}</th><th>핵심 약속</th><th>진행률</th><th></th><th>보조 지표 목표</th><th class="r">현재</th></tr></thead><tbody>`+
-    vu.items.map(r=>{const p=Math.min(100,r.now/r.target*100);return `<tr><td>${esc(r.name)}</td><td>${esc(r.promise)}</td><td class="num">${p.toFixed(0)}%</td><td style="width:140px"><div class="meter"><b style="width:${p}%;background:${p>=90?"var(--good)":p>=60?"var(--accent)":"var(--warn)"}"></b></div></td><td>${esc(r.sub_goal)}</td><td class="r num">${esc(r.sub_now)}</td></tr>`}).join("")+"</tbody>";
+    vu.items.map(r=>{const p=Math.min(100,r.now/r.target*100);return `<tr><td>${esc(r.name)}</td><td>${esc(r.promise)}</td><td class="num">${p.toFixed(0)}%</td><td style="width:140px"><div class="meter"><b style="width:${p}%;background:${p>=90?"var(--good)":p>=60?"var(--accent)":"var(--warn)"}"></b></div></td><td>${esc(r.sub_goal)}</td><td class="r num">${esc(r.sub_now)}</td></tr>`}).join("")+
+    (vu.source?`<tr><td colspan="6" style="color:var(--muted);font-size:12px">${esc(vu.source)}</td></tr>`:"")+"</tbody>";
 }
 // ---------- broker reports ----------
 let openRow=null, sfilter="all";
@@ -603,7 +608,7 @@ function signalsFor(c){
   if(!cuts.length&&downs>=2&&downs>ups*2) out.push({k:"down",head:`최근 30일 목표가 하향 ${downs}곳, 상향 ${ups}곳`,body:r.filter(x=>dirOf(x)==="down").map(x=>`${x[1]} ${tpText(x)}`).join(", "),
     why:"여러 증권사가 이익 추정을 낮추고 있어요. 하향이 몰리는 구간에서는 실적 발표 전후 변동성이 커지기 쉬워요.",score:downs});
   const G=valGaps(S[c]);
-  if(G.fair!=null&&G.fair<=-30&&(G.rel==null||G.rel<=-15)) out.push({k:"gap",head:`적정 PBR보다 ${Math.abs(G.fair).toFixed(0)}% 낮게 거래`+(G.peerFair!=null?` (해외 피어 평균 ${sign(G.peerFair,0)})`:""),
+  if(G.fair!=null&&G.fair<=-30&&(G.rel==null||G.rel<=-30)) out.push({k:"gap",head:`적정 PBR보다 ${Math.abs(G.fair).toFixed(0)}% 낮게 거래`+(G.rel!=null?` · 해외 피어 대비 ${Math.abs(G.rel).toFixed(0)}% 할인`:""),
     body:`ROE ${fx(S[c].me[2],1,"%")}, PBR ${fx(S[c].me[1],2,"배")} · ${S[c].peers.map(p=>p[1]).join("·")} 대비`,
     why:"버는 만큼 평가받지 못하고 있고, 해외 동종 기업보다도 할인 폭이 커요. 지배구조, 주주환원, 이익 지속성 같은 국내 요인이 이유인지 확인해 볼 지점이에요.",score:Math.abs(G.fair)/10});
   return out.map(x=>({...x,c}));
@@ -663,7 +668,7 @@ function renderReports(){
   renderHl(defaultHl(cur)); renderRows(); renderTpChart();
   const F=S[cur].fin;
   $("est").innerHTML=!F?`<tbody><tr><td>재무 데이터가 아직 없어요. DART 키를 설정하면 채워져요.</td></tr></tbody>`:`<thead><tr><th></th>${F.years.map(y=>`<th class="r">${y}</th>`).join("")}<th class="r">YoY</th></tr></thead><tbody>`+
-    [["매출액","rev"],["영업이익","op"],["순이익","ni"],["자본총계","eq"]].map(([l,k])=>{const v=F[k]||[],y=v[1]&&v[2]!=null&&v[1]>0?(v[2]/v[1]-1)*100:null;return `<tr><td>${l}</td>${v.map((x,i)=>`<td class="r num">${i===2?"<b>"+fmt(x)+"</b>":fmt(x)}</td>`).join("")}<td class="r num ${cls(y)}">${sign(y)}</td></tr>`}).join("")+"</tbody>";
+    [["매출액","rev"],["영업이익","op"],[F.basis==="지배주주"?"순이익(지배주주)":"순이익","ni"],[F.basis==="지배주주"?"자본(지배주주)":"자본총계","eq"]].map(([l,k])=>{const v=F[k]||[],y=v[1]&&v[2]!=null&&v[1]>0?(v[2]/v[1]-1)*100:null;return `<tr><td>${l}</td>${v.map((x,i)=>`<td class="r num">${i===2?"<b>"+fmt(x)+"</b>":fmt(x)}</td>`).join("")}<td class="r num ${cls(y)}">${sign(y)}</td></tr>`}).join("")+"</tbody>";
   $("news").innerHTML=d.news.length?d.news.map(n=>`<div><span class="when num">${esc(n[0])}</span><span>${safeUrl(n[3])?`<a href="${esc(safeUrl(n[3]))}" target="_blank" rel="noopener" style="color:inherit"><b>${esc(n[1])}</b></a>`:`<b>${esc(n[1])}</b>`}<p>${esc(n[2])}</p></span></div>`).join(""):`<p style="color:var(--muted)">최근 뉴스를 찾지 못했어요.</p>`;
   resetChat();
 }
