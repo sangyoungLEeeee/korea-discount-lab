@@ -180,6 +180,22 @@ def fetch_financials(corp_code, key):
     return None
 
 
+def fetch_common_shares(corp_code, key):
+    """최근 사업보고서 기준 보통주 발행주식 수. Yahoo 주식 수는 우선주가 섞이는 경우가 있어 DART 값을 우선 사용."""
+    this_year = datetime.now(KST).year
+    for y in (this_year - 1, this_year - 2):
+        js = http_get(f"{DART}/stockTotqySttus.json", {
+            "crtfc_key": key, "corp_code": corp_code, "bsns_year": str(y), "reprt_code": "11011"})
+        if js.get("status") != "000":
+            continue
+        row = next((x for x in js.get("list", []) if (x.get("se") or "").replace(" ", "") == "보통주"), None)
+        if row:
+            n = num(row.get("istc_totqy"))
+            if n:
+                return n
+    return None
+
+
 # ---------------------------------------------------------------- 뉴스 (네이버 검색 API)
 def fetch_news(name, cid, secret):
     js = http_get(NAVER_NEWS, {"query": f"{name} 주가", "display": 5, "sort": "date"},
@@ -333,7 +349,27 @@ def main():
     source = "sample" if sample else ("data.go.kr" if key_price else "yahoo")
     log(f"주가 출처: {source}")
 
-    cache = {}
+    cache, shares_cache = {}, {}
+    corp = {}
+    if key_dart and not sample:
+        try:
+            corp = dart_corp_codes(key_dart)
+            log(f"DART 회사코드 {len(corp)}개 불러옴")
+        except Exception as e:
+            log("DART 회사코드 실패:", e)
+
+    def dart_mcap(code, close):
+        """DART 보통주 수 × 종가. 실패하면 None."""
+        if code not in corp:
+            return None
+        if code not in shares_cache:
+            try:
+                shares_cache[code] = fetch_common_shares(corp[code], key_dart)
+            except Exception as e:
+                log(f"{code} 주식 수 실패: {e}")
+                shares_cache[code] = None
+        n = shares_cache[code]
+        return n * close if n else None
 
     def price_of(code):
         if code not in cache:
@@ -345,17 +381,13 @@ def main():
                 else:
                     cache[code] = fetch_prices_yahoo(code)
                     time.sleep(0.5)  # Yahoo에 너무 빠르게 요청하지 않도록
+                    m = dart_mcap(code, cache[code]["bars"][-1]["c"])
+                    if m:
+                        cache[code]["mcap"] = m
             except Exception as e:
                 log(f"{code} 시세 실패: {e}")
                 cache[code] = None
         return cache[code]
-
-    corp = {}
-    if key_dart and not sample:
-        try:
-            corp = dart_corp_codes(key_dart)
-        except Exception as e:
-            log("DART 회사코드 실패:", e)
 
     out = {"updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"), "sample": sample, "price_source": source,
            "peers_as_of": stocks_cfg.get("peers_as_of"), "stocks": {}}
