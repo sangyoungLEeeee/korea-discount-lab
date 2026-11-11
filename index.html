@@ -519,7 +519,7 @@ function renderValuation(st){
     <div class="kpi"><div class="l">ROE 감안 PBR 괴리율</div><div class="v num ${cls(G.eff)}">${sign(G.eff)}</div></div>
     <div class="kpi"><div class="l">배당수익률 차이</div><div class="v num">${G.div==null?"—":(G.div>0?"+":"")+G.div.toFixed(1)+"%p"}</div></div>`;
   $("peers").innerHTML=rows.map((p,i)=>`<tr class="${i===0?"me":""}"><td><span class="flag ${p[0]}">${p[0]}</span>${esc(p[1])} <span class="num" style="color:var(--muted);font-weight:400">${esc(p[2])}</span></td>
-    <td class="r num">${p[3]!=null&&p[3]<0?"적자":fx(p[3],1,"배")}</td><td class="r num">${fx(p[4],2,"배")}</td><td class="r num">${fx(p[5],1,"%")}</td><td class="r num">${fx(p[6],1,"%")}</td><td class="r num">${fx(effOf(p[4],p[5]),3)}</td></tr>`).join("");
+    <td class="r num">${p[3]!=null&&p[3]<0?"적자":p[3]>200?"이익 미미":fx(p[3],1,"배")}</td><td class="r num">${fx(p[4],2,"배")}</td><td class="r num">${fx(p[5],1,"%")}</td><td class="r num">${fx(p[6],1,"%")}</td><td class="r num">${fx(effOf(p[4],p[5]),3)}</td></tr>`).join("");
   const e=G.eff;
   $("vnote").innerHTML=`<b>읽는 법</b> · PBR이 낮다고 무조건 싼 건 아니에요. 돈을 잘 버는 회사(ROE가 높은 회사)는 PBR이 높은 게 정상이에요. 그래서 <b>PBR ÷ ROE</b>로 수익성 1%당 얼마를 쳐주는지 비교해요. `+
     (e==null?`${esc(st.name)}는 ROE가 3% 미만(또는 적자)이거나 재무 데이터가 없어서 이 비교가 의미 있게 계산되지 않아요. 이익이 정상화되기 전에는 PBR만 참고하세요. 한국 종목의 PER·PBR·ROE는 DART 최근 사업연도 연결재무(지배·비지배 포함 순이익)와 시가총액으로 계산해요.`:
@@ -593,6 +593,7 @@ function renderRows(){
     return h;}).join("");
 }
 function renderTpChart(){
+  if(!R[cur].reports.length){$("tpChart").innerHTML=`<p style="color:var(--muted)">등록된 리포트가 없어요. config/reports.json 에 헤드라인을 추가하면 증권사별 목표주가가 여기에 그려져요.</p>`;return;}
   const rows=R[cur].reports, price=S[cur].price, st=rstats(cur), W=520,rowH=30,top=8,left=104,right=64,H=top+rows.length*rowH+24;
   const all=rows.map(r=>r[4]).concat(price);
   const lo=Math.floor(Math.min(...all)*0.9/10000)*10000, hi=Math.ceil(Math.max(...all)*1.03/10000)*10000;
