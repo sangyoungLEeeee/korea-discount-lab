@@ -154,13 +154,22 @@ def fetch_metrics_yahoo(ticker):
         except (TypeError, ValueError):
             return None
         return None if math.isnan(v) else v
-    price = f("currentPrice") or f("regularMarketPrice") or f("previousClose")
-    per, pbr, roe, rate = f("trailingPE"), f("priceToBook"), f("returnOnEquity"), f("dividendRate")
-    div = round(rate / price * 100, 2) if rate and price else (0.0 if price else None)
+    per, pbr, roe = f("trailingPE"), f("priceToBook"), f("returnOnEquity")
+    # ROE는 같은 데이터의 PBR ÷ PER 로 계산 (ROE = 순이익/자본 = (시총/자본)/(시총/순이익)).
+    # Yahoo의 returnOnEquity 값은 해외 종목에서 기준이 어긋나는 경우가 있어 보조로만 사용.
+    if per and per > 0 and pbr and pbr > 0:
+        roe_pct = pbr / per * 100
+    else:
+        roe_pct = roe * 100 if roe is not None else None
+    # 배당수익률은 지난 12개월 실제 지급 기준(trailingAnnualDividendYield, 소수). 비정상 값(15% 초과)은 버림.
+    ty = f("trailingAnnualDividendYield")
+    div = round(ty * 100, 2) if ty is not None else None
+    if div is not None and div > 15:
+        div = None
     return {
         "per": round(per, 1) if per else None,  # 음수면 화면에 "적자"로 표시
         "pbr": round(pbr, 2) if pbr and pbr > 0 else None,
-        "roe": round(roe * 100, 1) if roe is not None else None,
+        "roe": round(roe_pct, 1) if roe_pct is not None else None,
         "div": div,
     }
 
